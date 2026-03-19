@@ -637,6 +637,7 @@ dependencies = [
 [[package]]
 name = "thorn-api"
 version = "0.1.0"
+source = "git+https://github.com/pescheckit/thorn#04899d717ce75115a9a70dd71875dc3ea5158846"
 dependencies = [
  "ruff_python_ast",
  "ruff_text_size",
