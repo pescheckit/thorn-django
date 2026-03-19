@@ -1,0 +1,29 @@
+version: "3.8"
+
+services:
+  thorn-django:
+    build:
+      # Build context is the repository root so that the single COPY
+      # instruction in the Dockerfile can capture both /thorn and
+      # /thorn-django in one layer.
+      context: ..
+      dockerfile: thorn-django/Dockerfile
+
+    # Mount the repository root so that edits to Rust or Python source
+    # are visible inside the container without a full rebuild.  The
+    # mount shadows /app, so remember to rebuild (`docker compose build`)
+    # after changing Cargo.toml or adding new crates.
+    volumes:
+      - ../:/app
+
+    working_dir: /app
+
+    # Environment variables that the test script and the extractor rely on.
+    environment:
+      - VIRTUAL_ENV=/venv
+      - PATH=/venv/bin:/app/thorn/target/release:/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      - PYO3_PYTHON=/venv/bin/python3
+
+    # By default run the test suite; override with `docker compose run
+    # thorn-django bash` for an interactive shell.
+    command: ["/app/thorn-django/test.sh"]
