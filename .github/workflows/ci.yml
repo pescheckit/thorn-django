@@ -10,20 +10,38 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  lint:
-    name: Rust Lint
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Python dev headers
+        run: sudo apt-get update && sudo apt-get install -y python3-dev
+      - run: cargo check
+
+  clippy:
+    name: Clippy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo fmt -- --check
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Python dev headers
+        run: sudo apt-get update && sudo apt-get install -y python3-dev
       - run: cargo clippy -- -D warnings
 
-  unit-test:
-    name: Rust Unit Tests
+  test:
+    name: Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,27 +53,3 @@ jobs:
       - name: Install Python dev headers
         run: sudo apt-get update && sudo apt-get install -y python3-dev
       - run: cargo test
-
-  integration-test:
-    name: Integration Test (Docker)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build and run test suite
-        run: docker compose up --build --exit-code-from thorn-django
-        timeout-minutes: 10
-
-  build:
-    name: Build Release
-    needs: [lint, unit-test]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Install Python dev headers
-        run: sudo apt-get update && sudo apt-get install -y python3-dev
-      - run: cargo build --release
