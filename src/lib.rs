@@ -17,11 +17,15 @@ struct GraphBundle {
 
 pub struct DjangoPlugin {
     has_graph: bool,
+    settings_module: Option<String>,
 }
 
 impl DjangoPlugin {
     pub fn new() -> Self {
-        Self { has_graph: false }
+        Self {
+            has_graph: false,
+            settings_module: None,
+        }
     }
 }
 
@@ -66,6 +70,7 @@ impl Plugin for DjangoPlugin {
             .get("settings")
             .cloned()
             .or_else(|| config::read_django_settings(toml_content));
+        self.settings_module = settings_module.clone();
 
         // ── 2. Discover graph file path ─────────────────────────────────────
         let graph_file = cli_args
@@ -283,15 +288,19 @@ impl Plugin for DjangoPlugin {
     }
 
     fn project_checks(&self, project_dir: &std::path::Path, toml_content: &str) -> Vec<Diagnostic> {
-        let settings_module = config::read_django_settings(toml_content).unwrap_or_else(|| {
-            for candidate in &["settings", "config.settings", "conf.settings"] {
-                let path = project_dir.join(candidate.replace('.', "/") + ".py");
-                if path.exists() {
-                    return candidate.to_string();
+        let settings_module = self
+            .settings_module
+            .clone()
+            .or_else(|| config::read_django_settings(toml_content))
+            .unwrap_or_else(|| {
+                for candidate in &["settings", "config.settings", "conf.settings"] {
+                    let path = project_dir.join(candidate.replace('.', "/") + ".py");
+                    if path.exists() {
+                        return candidate.to_string();
+                    }
                 }
-            }
-            String::new()
-        });
+                String::new()
+            });
 
         let mut diagnostics = Vec::new();
         if !settings_module.is_empty() {

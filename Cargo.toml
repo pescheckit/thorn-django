@@ -20,3 +20,7 @@ colored = "2"
 
 [dev-dependencies]
 tempfile = "3"
+
+# Use local checkout when available (locally + CI checks out sibling)
+[patch."https://github.com/pescheckit/thorn"]
+thorn-api = { path = "../thorn/crates/thorn-api" }
