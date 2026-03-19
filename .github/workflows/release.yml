@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   test:
-    name: Test before release
+    name: Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,29 +23,71 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y python3-dev
       - run: cargo test
 
+  build:
+    name: Build ${{ matrix.target }}
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive: thorn-django-linux-x86_64.tar.gz
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            archive: thorn-django-macos-x86_64.tar.gz
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            archive: thorn-django-macos-aarch64.tar.gz
+
+    steps:
+      - uses: actions/checkout@v4
+      - run: git clone --depth 1 https://github.com/pescheckit/thorn ../thorn
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install build deps
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y python3-dev
+      - run: cargo build --release --target ${{ matrix.target }}
+      - name: Package
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czf ../../../${{ matrix.archive }} thorn-django
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.archive }}
+          path: ${{ matrix.archive }}
+
   release:
     name: Create Release
-    needs: test
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           body: |
-            ## Installation
+            ## Install
 
-            Add to your `Cargo.toml`:
-            ```toml
-            [dependencies]
-            thorn-django = { git = "https://github.com/pescheckit/thorn-django", tag = "${{ github.ref_name }}" }
+            Download a binary below, or build from source:
+            ```sh
+            cargo install --git https://github.com/pescheckit/thorn-django
             ```
 
-            Or with a specific thorn version:
-            ```toml
-            [dependencies]
-            thorn-api = { git = "https://github.com/pescheckit/thorn", tag = "v0.1.0" }
-            thorn-django = { git = "https://github.com/pescheckit/thorn-django", tag = "${{ github.ref_name }}" }
+            ## Usage
+            ```sh
+            thorn-django . --django-settings=myproject.settings
+            thorn-django . --check=fix
             ```
+          files: artifacts/*

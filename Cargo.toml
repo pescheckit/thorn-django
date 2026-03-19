@@ -7,7 +7,7 @@ description = "Django linting plugin for Thorn — a fast pylint-django alternat
 authors = ["Bram"]
 
 [[bin]]
-name = "thorn"
+name = "thorn-django"
 path = "src/bin/thorn.rs"
 
 [dependencies]
