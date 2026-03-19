@@ -12,9 +12,7 @@ pub fn extract_model_graph(settings_module: &str) -> Result<AppGraph, PyErr> {
     })
 }
 
-pub fn extract_and_validate(
-    settings_module: &str,
-) -> Result<(AppGraph, Vec<Diagnostic>), PyErr> {
+pub fn extract_and_validate(settings_module: &str) -> Result<(AppGraph, Vec<Diagnostic>), PyErr> {
     Python::with_gil(|py| {
         boot_django(py, settings_module)?;
         let graph = extract::extract_graph(py)?;

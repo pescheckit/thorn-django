@@ -20,17 +20,36 @@ fn is_first_party(model: &Model) -> bool {
             && !model.source_file.contains("/.venv/");
     }
     let third_party = [
-        "django.", "rest_framework.", "allauth.", "guardian.",
-        "django_q.", "django_otp.", "otp_", "oauth2_provider.",
-        "axes.", "simple_history.", "django_filters.",
-        "drf_spectacular.", "corsheaders.", "debug_toolbar.",
-        "storages.", "celery.", "kombu.", "djstripe.",
+        "django.",
+        "rest_framework.",
+        "allauth.",
+        "guardian.",
+        "django_q.",
+        "django_otp.",
+        "otp_",
+        "oauth2_provider.",
+        "axes.",
+        "simple_history.",
+        "django_filters.",
+        "drf_spectacular.",
+        "corsheaders.",
+        "debug_toolbar.",
+        "storages.",
+        "celery.",
+        "kombu.",
+        "djstripe.",
     ];
-    !third_party.iter().any(|prefix| model.module.starts_with(prefix))
+    !third_party
+        .iter()
+        .any(|prefix| model.module.starts_with(prefix))
 }
 
 fn model_filename(model: &Model) -> &str {
-    if model.source_file.is_empty() { &model.module } else { &model.source_file }
+    if model.source_file.is_empty() {
+        &model.module
+    } else {
+        &model.source_file
+    }
 }
 
 // ── DJ101: Model missing __str__ ─────────────────────────────────────────
@@ -38,7 +57,9 @@ fn model_filename(model: &Model) -> &str {
 pub struct GraphModelMissingStr;
 
 impl GraphCheck for GraphModelMissingStr {
-    fn code(&self) -> &'static str { "DJ101" }
+    fn code(&self) -> &'static str {
+        "DJ101"
+    }
 
     fn check(&self, graph: &ModelGraph) -> Vec<Diagnostic> {
         graph.models.iter()
@@ -64,17 +85,28 @@ impl GraphCheck for GraphModelMissingStr {
 pub struct DuplicateRelatedName;
 
 impl GraphCheck for DuplicateRelatedName {
-    fn code(&self) -> &'static str { "DJ102" }
+    fn code(&self) -> &'static str {
+        "DJ102"
+    }
 
     #[allow(clippy::type_complexity)]
     fn check(&self, graph: &ModelGraph) -> Vec<Diagnostic> {
         let mut seen: HashMap<(&str, &str, &str), Vec<(&str, &str, &str)>> = HashMap::new();
 
         for model in &graph.models {
-            if !is_first_party(model) { continue; }
+            if !is_first_party(model) {
+                continue;
+            }
             for rel in &model.relations {
-                if rel.related_name.is_empty() { continue; }
-                if matches!(rel.kind, RelationKind::Reverse | RelationKind::ReverseOneToOne) { continue; }
+                if rel.related_name.is_empty() {
+                    continue;
+                }
+                if matches!(
+                    rel.kind,
+                    RelationKind::Reverse | RelationKind::ReverseOneToOne
+                ) {
+                    continue;
+                }
                 seen.entry((&rel.to_model_app, &rel.to_model, &rel.related_name))
                     .or_default()
                     .push((&model.app_label, &model.name, model_filename(model)));
@@ -84,9 +116,19 @@ impl GraphCheck for DuplicateRelatedName {
         seen.values()
             .filter(|sources| sources.len() > 1)
             .flat_map(|sources| {
-                let models: Vec<_> = sources.iter().map(|(app, name, _)| format!("{app}.{name}")).collect();
+                let models: Vec<_> = sources
+                    .iter()
+                    .map(|(app, name, _)| format!("{app}.{name}"))
+                    .collect();
                 sources.iter().map(move |(app, name, filename)| {
-                    Diagnostic::new("DJ102", format!("Duplicate related_name on '{app}.{name}' — conflicts with: {}", models.join(", ")), *filename)
+                    Diagnostic::new(
+                        "DJ102",
+                        format!(
+                            "Duplicate related_name on '{app}.{name}' — conflicts with: {}",
+                            models.join(", ")
+                        ),
+                        *filename,
+                    )
                 })
             })
             .collect()
@@ -96,17 +138,27 @@ impl GraphCheck for DuplicateRelatedName {
 // ── DJ103: null=True on string-based fields ──────────────────────────────
 
 const STRING_FIELD_TYPES: &[&str] = &[
-    "CharField", "TextField", "EmailField", "URLField",
-    "SlugField", "FilePathField", "FileField", "ImageField",
+    "CharField",
+    "TextField",
+    "EmailField",
+    "URLField",
+    "SlugField",
+    "FilePathField",
+    "FileField",
+    "ImageField",
 ];
 
 pub struct NullableStringFieldGraph;
 
 impl GraphCheck for NullableStringFieldGraph {
-    fn code(&self) -> &'static str { "DJ103" }
+    fn code(&self) -> &'static str {
+        "DJ103"
+    }
 
     fn check(&self, graph: &ModelGraph) -> Vec<Diagnostic> {
-        graph.models.iter()
+        graph
+            .models
+            .iter()
             .filter(|m| is_first_party(m))
             .filter(|m| !is_auto_generated(m))
             .flat_map(|m| {
@@ -115,7 +167,10 @@ impl GraphCheck for NullableStringFieldGraph {
                     if is_string && f.nullable && !f.unique {
                         let mut d = Diagnostic::new(
                             "DJ103",
-                            format!("{}.{}.{} — null=True on string field. Use blank=True instead.", m.app_label, m.name, f.name),
+                            format!(
+                                "{}.{}.{} — null=True on string field. Use blank=True instead.",
+                                m.app_label, m.name, f.name
+                            ),
                             model_filename(m),
                         );
                         d.line = find_field_line(model_filename(m), &f.name);
@@ -134,14 +189,23 @@ impl GraphCheck for NullableStringFieldGraph {
 pub struct MissingReverseAccessor;
 
 impl GraphCheck for MissingReverseAccessor {
-    fn code(&self) -> &'static str { "DJ104" }
+    fn code(&self) -> &'static str {
+        "DJ104"
+    }
 
     fn check(&self, graph: &ModelGraph) -> Vec<Diagnostic> {
         let mut diagnostics = Vec::new();
         for model in &graph.models {
-            if !is_first_party(model) { continue; }
+            if !is_first_party(model) {
+                continue;
+            }
             for rel in &model.relations {
-                if matches!(rel.kind, RelationKind::Reverse | RelationKind::ReverseOneToOne) { continue; }
+                if matches!(
+                    rel.kind,
+                    RelationKind::Reverse | RelationKind::ReverseOneToOne
+                ) {
+                    continue;
+                }
                 if graph.get_model(&rel.to_model_app, &rel.to_model).is_none() {
                     diagnostics.push(Diagnostic::new(
                         "DJ104",

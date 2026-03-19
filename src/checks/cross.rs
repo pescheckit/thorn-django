@@ -13,13 +13,28 @@ fn is_third_party_model(model: &thorn_api::Model) -> bool {
             || model.source_file.contains("/.venv/");
     }
     const THIRD_PARTY: &[&str] = &[
-        "django.", "rest_framework.", "allauth.", "guardian.",
-        "django_q.", "django_otp.", "otp_", "oauth2_provider.",
-        "axes.", "simple_history.", "django_filters.",
-        "drf_spectacular.", "corsheaders.", "debug_toolbar.",
-        "storages.", "celery.", "kombu.", "djstripe.",
+        "django.",
+        "rest_framework.",
+        "allauth.",
+        "guardian.",
+        "django_q.",
+        "django_otp.",
+        "otp_",
+        "oauth2_provider.",
+        "axes.",
+        "simple_history.",
+        "django_filters.",
+        "drf_spectacular.",
+        "corsheaders.",
+        "debug_toolbar.",
+        "storages.",
+        "celery.",
+        "kombu.",
+        "djstripe.",
     ];
-    THIRD_PARTY.iter().any(|prefix| model.module.starts_with(prefix))
+    THIRD_PARTY
+        .iter()
+        .any(|prefix| model.module.starts_with(prefix))
 }
 
 // ── DJ201: Invalid field in .filter()/.exclude() ─────────────────────────
@@ -27,20 +42,42 @@ fn is_third_party_model(model: &thorn_api::Model) -> bool {
 pub struct InvalidFilterField;
 
 impl AstCheck for InvalidFilterField {
-    fn code(&self) -> &'static str { "DJ201" }
-    fn level(&self) -> thorn_api::Level { thorn_api::Level::Fix }
+    fn code(&self) -> &'static str {
+        "DJ201"
+    }
+    fn level(&self) -> thorn_api::Level {
+        thorn_api::Level::Fix
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
-        if ctx.graph.models.is_empty() { return vec![]; }
-        let mut v = FilterFieldVisitor { diagnostics: vec![], filename: ctx.filename.to_string(), graph: ctx.graph };
+        if ctx.graph.models.is_empty() {
+            return vec![];
+        }
+        let mut v = FilterFieldVisitor {
+            diagnostics: vec![],
+            filename: ctx.filename.to_string(),
+            graph: ctx.graph,
+        };
         v.visit_body(&ctx.module.body);
         v.diagnostics
     }
 }
 
-struct FilterFieldVisitor<'g> { diagnostics: Vec<Diagnostic>, filename: String, graph: &'g thorn_api::AppGraph }
+struct FilterFieldVisitor<'g> {
+    diagnostics: Vec<Diagnostic>,
+    filename: String,
+    graph: &'g thorn_api::AppGraph,
+}
 
-const QUERYSET_FILTER_METHODS: &[&str] = &["filter", "exclude", "get", "get_or_create", "update_or_create", "update", "create"];
+const QUERYSET_FILTER_METHODS: &[&str] = &[
+    "filter",
+    "exclude",
+    "get",
+    "get_or_create",
+    "update_or_create",
+    "update",
+    "create",
+];
 
 impl<'a, 'g> Visitor<'a> for FilterFieldVisitor<'g> {
     fn visit_expr(&mut self, expr: &'a Expr) {
@@ -58,12 +95,28 @@ impl<'a, 'g> Visitor<'a> for FilterFieldVisitor<'g> {
                         if let Some(arg_name) = &kw.arg {
                             let field_name = arg_name.as_str();
                             let base_field = field_name.split("__").next().unwrap_or(field_name);
-                            if base_field == "pk" || base_field == "defaults" { continue; }
+                            if base_field == "pk" || base_field == "defaults" {
+                                continue;
+                            }
                             // Skip fields introduced by .annotate() in the chain
-                            if annotations.contains(&base_field.to_string()) { continue; }
-                            let found = candidates.iter().any(|m| model_has_field_flexible(m, base_field));
+                            if annotations.contains(&base_field.to_string()) {
+                                continue;
+                            }
+                            let found = candidates
+                                .iter()
+                                .any(|m| model_has_field_flexible(m, base_field));
                             if !found {
-                                self.diagnostics.push(Diagnostic::new("DJ201", format!("Field '{field_name}' does not exist on model '{}'.", model_name), &self.filename).with_range(kw.range()));
+                                self.diagnostics.push(
+                                    Diagnostic::new(
+                                        "DJ201",
+                                        format!(
+                                            "Field '{field_name}' does not exist on model '{}'.",
+                                            model_name
+                                        ),
+                                        &self.filename,
+                                    )
+                                    .with_range(kw.range()),
+                                );
                             }
                         }
                     }
@@ -79,18 +132,31 @@ impl<'a, 'g> Visitor<'a> for FilterFieldVisitor<'g> {
 pub struct InvalidValuesField;
 
 impl AstCheck for InvalidValuesField {
-    fn code(&self) -> &'static str { "DJ202" }
+    fn code(&self) -> &'static str {
+        "DJ202"
+    }
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
-        if ctx.graph.models.is_empty() { return vec![]; }
-        let mut v = ValuesFieldVisitor { diagnostics: vec![], filename: ctx.filename.to_string(), graph: ctx.graph };
+        if ctx.graph.models.is_empty() {
+            return vec![];
+        }
+        let mut v = ValuesFieldVisitor {
+            diagnostics: vec![],
+            filename: ctx.filename.to_string(),
+            graph: ctx.graph,
+        };
         v.visit_body(&ctx.module.body);
         v.diagnostics
     }
 }
 
-struct ValuesFieldVisitor<'g> { diagnostics: Vec<Diagnostic>, filename: String, graph: &'g thorn_api::AppGraph }
+struct ValuesFieldVisitor<'g> {
+    diagnostics: Vec<Diagnostic>,
+    filename: String,
+    graph: &'g thorn_api::AppGraph,
+}
 
-const QUERYSET_STRING_ARG_METHODS: &[&str] = &["values", "values_list", "order_by", "only", "defer"];
+const QUERYSET_STRING_ARG_METHODS: &[&str] =
+    &["values", "values_list", "order_by", "only", "defer"];
 
 impl<'a, 'g> Visitor<'a> for ValuesFieldVisitor<'g> {
     fn visit_expr(&mut self, expr: &'a Expr) {
@@ -107,8 +173,12 @@ impl<'a, 'g> Visitor<'a> for ValuesFieldVisitor<'g> {
                             let field_name = s.value.to_str();
                             let base_field = field_name.split("__").next().unwrap_or(field_name);
                             let base_field = base_field.strip_prefix('-').unwrap_or(base_field);
-                            if base_field == "pk" { continue; }
-                            let found = candidates.iter().any(|m| model_has_field_flexible(m, base_field));
+                            if base_field == "pk" {
+                                continue;
+                            }
+                            let found = candidates
+                                .iter()
+                                .any(|m| model_has_field_flexible(m, base_field));
                             if !found {
                                 self.diagnostics.push(Diagnostic::new("DJ202", format!("Field '{field_name}' passed to .{method_name}() does not exist on model '{}'.", model_name), &self.filename).with_range(arg.range()));
                             }
@@ -126,31 +196,98 @@ impl<'a, 'g> Visitor<'a> for ValuesFieldVisitor<'g> {
 pub struct InvalidManagerMethod;
 
 impl AstCheck for InvalidManagerMethod {
-    fn code(&self) -> &'static str { "DJ203" }
+    fn code(&self) -> &'static str {
+        "DJ203"
+    }
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
-        if ctx.graph.models.is_empty() { return vec![]; }
-        let mut v = ManagerMethodVisitor { diagnostics: vec![], filename: ctx.filename.to_string(), graph: ctx.graph };
+        if ctx.graph.models.is_empty() {
+            return vec![];
+        }
+        let mut v = ManagerMethodVisitor {
+            diagnostics: vec![],
+            filename: ctx.filename.to_string(),
+            graph: ctx.graph,
+        };
         v.visit_body(&ctx.module.body);
         v.diagnostics
     }
 }
 
-struct ManagerMethodVisitor<'g> { diagnostics: Vec<Diagnostic>, filename: String, graph: &'g thorn_api::AppGraph }
+struct ManagerMethodVisitor<'g> {
+    diagnostics: Vec<Diagnostic>,
+    filename: String,
+    graph: &'g thorn_api::AppGraph,
+}
 
 const BUILTIN_MANAGER_METHODS: &[&str] = &[
-    "none", "all", "count", "dates", "datetimes", "distinct", "extra",
-    "get", "get_or_create", "update_or_create", "get_queryset", "create",
-    "bulk_create", "bulk_update", "filter", "aggregate", "annotate",
-    "complex_filter", "exclude", "in_bulk", "iterator", "latest",
-    "earliest", "first", "last", "order_by", "select_for_update",
-    "select_related", "prefetch_related", "values", "values_list",
-    "update", "reverse", "defer", "only", "using", "exists", "delete",
-    "as_manager", "raw", "explain", "union", "intersection", "difference",
-    "aiterator", "aget", "acreate", "aget_or_create", "aupdate_or_create",
-    "abulk_create", "abulk_update", "acount", "ain_bulk", "alatest",
-    "aearliest", "afirst", "alast", "aaggregate", "aexists", "aupdate",
-    "adelete", "acontains",
-    "contribute_to_class", "db_manager", "db", "auto_created", "use_in_migrations", "model",
+    "none",
+    "all",
+    "count",
+    "dates",
+    "datetimes",
+    "distinct",
+    "extra",
+    "get",
+    "get_or_create",
+    "update_or_create",
+    "get_queryset",
+    "create",
+    "bulk_create",
+    "bulk_update",
+    "filter",
+    "aggregate",
+    "annotate",
+    "complex_filter",
+    "exclude",
+    "in_bulk",
+    "iterator",
+    "latest",
+    "earliest",
+    "first",
+    "last",
+    "order_by",
+    "select_for_update",
+    "select_related",
+    "prefetch_related",
+    "values",
+    "values_list",
+    "update",
+    "reverse",
+    "defer",
+    "only",
+    "using",
+    "exists",
+    "delete",
+    "as_manager",
+    "raw",
+    "explain",
+    "union",
+    "intersection",
+    "difference",
+    "aiterator",
+    "aget",
+    "acreate",
+    "aget_or_create",
+    "aupdate_or_create",
+    "abulk_create",
+    "abulk_update",
+    "acount",
+    "ain_bulk",
+    "alatest",
+    "aearliest",
+    "afirst",
+    "alast",
+    "aaggregate",
+    "aexists",
+    "aupdate",
+    "adelete",
+    "acontains",
+    "contribute_to_class",
+    "db_manager",
+    "db",
+    "auto_created",
+    "use_in_migrations",
+    "model",
 ];
 
 impl<'a, 'g> Visitor<'a> for ManagerMethodVisitor<'g> {
@@ -162,8 +299,12 @@ impl<'a, 'g> Visitor<'a> for ManagerMethodVisitor<'g> {
                     let method_name = attr.attr.as_str();
                     if let Expr::Name(model_ref) = inner_attr.value.as_ref() {
                         if let Some(model) = self.graph.find_model_by_name(model_ref.id.as_str()) {
-                            if let Some(manager) = model.managers.iter().find(|m| m.name == manager_name) {
-                                if !BUILTIN_MANAGER_METHODS.contains(&method_name) && !manager.custom_methods.contains(&method_name.to_string()) {
+                            if let Some(manager) =
+                                model.managers.iter().find(|m| m.name == manager_name)
+                            {
+                                if !BUILTIN_MANAGER_METHODS.contains(&method_name)
+                                    && !manager.custom_methods.contains(&method_name.to_string())
+                                {
                                     self.diagnostics.push(Diagnostic::new("DJ203", format!("Method '{method_name}' does not exist on manager '{manager_name}' of model '{}'.", model.name), &self.filename).with_range(attr.range()));
                                 }
                             }
@@ -181,16 +322,28 @@ impl<'a, 'g> Visitor<'a> for ManagerMethodVisitor<'g> {
 pub struct InvalidGetDisplay;
 
 impl AstCheck for InvalidGetDisplay {
-    fn code(&self) -> &'static str { "DJ204" }
+    fn code(&self) -> &'static str {
+        "DJ204"
+    }
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
-        if ctx.graph.models.is_empty() { return vec![]; }
-        let mut v = GetDisplayVisitor { diagnostics: vec![], filename: ctx.filename.to_string(), graph: ctx.graph };
+        if ctx.graph.models.is_empty() {
+            return vec![];
+        }
+        let mut v = GetDisplayVisitor {
+            diagnostics: vec![],
+            filename: ctx.filename.to_string(),
+            graph: ctx.graph,
+        };
         v.visit_body(&ctx.module.body);
         v.diagnostics
     }
 }
 
-struct GetDisplayVisitor<'g> { diagnostics: Vec<Diagnostic>, filename: String, graph: &'g thorn_api::AppGraph }
+struct GetDisplayVisitor<'g> {
+    diagnostics: Vec<Diagnostic>,
+    filename: String,
+    graph: &'g thorn_api::AppGraph,
+}
 
 impl<'a, 'g> Visitor<'a> for GetDisplayVisitor<'g> {
     fn visit_expr(&mut self, expr: &'a Expr) {
@@ -221,17 +374,31 @@ impl<'a, 'g> Visitor<'a> for GetDisplayVisitor<'g> {
 pub struct SerializerFieldMismatch;
 
 impl AstCheck for SerializerFieldMismatch {
-    fn code(&self) -> &'static str { "DJ205" }
-    fn level(&self) -> thorn_api::Level { thorn_api::Level::Fix }
+    fn code(&self) -> &'static str {
+        "DJ205"
+    }
+    fn level(&self) -> thorn_api::Level {
+        thorn_api::Level::Fix
+    }
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
-        if ctx.graph.models.is_empty() { return vec![]; }
-        let mut v = SerializerFieldVisitor { diagnostics: vec![], filename: ctx.filename.to_string(), graph: ctx.graph };
+        if ctx.graph.models.is_empty() {
+            return vec![];
+        }
+        let mut v = SerializerFieldVisitor {
+            diagnostics: vec![],
+            filename: ctx.filename.to_string(),
+            graph: ctx.graph,
+        };
         v.visit_body(&ctx.module.body);
         v.diagnostics
     }
 }
 
-struct SerializerFieldVisitor<'g> { diagnostics: Vec<Diagnostic>, filename: String, graph: &'g thorn_api::AppGraph }
+struct SerializerFieldVisitor<'g> {
+    diagnostics: Vec<Diagnostic>,
+    filename: String,
+    graph: &'g thorn_api::AppGraph,
+}
 
 impl<'a, 'g> Visitor<'a> for SerializerFieldVisitor<'g> {
     fn visit_stmt(&mut self, stmt: &'a Stmt) {
@@ -246,8 +413,12 @@ impl<'a, 'g> Visitor<'a> for SerializerFieldVisitor<'g> {
                     // Collect explicitly declared fields and get_X methods on the serializer class
                     let declared = collect_declared_serializer_fields(class);
                     for (field_name, range) in &field_names {
-                        if field_name == "__all__" { continue; }
-                        if declared.contains(field_name.as_str()) { continue; }
+                        if field_name == "__all__" {
+                            continue;
+                        }
+                        if declared.contains(field_name.as_str()) {
+                            continue;
+                        }
                         // Field is valid if it exists on ANY model with this name
                         let found = candidates.iter().any(|m| {
                             m.has_field_or_relation(field_name) || m.has_method(field_name)
@@ -268,16 +439,28 @@ impl<'a, 'g> Visitor<'a> for SerializerFieldVisitor<'g> {
 pub struct WrongReverseAccessor;
 
 impl AstCheck for WrongReverseAccessor {
-    fn code(&self) -> &'static str { "DJ206" }
+    fn code(&self) -> &'static str {
+        "DJ206"
+    }
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
-        if ctx.graph.models.is_empty() { return vec![]; }
-        let mut v = ReverseAccessorVisitor { diagnostics: vec![], filename: ctx.filename.to_string(), graph: ctx.graph };
+        if ctx.graph.models.is_empty() {
+            return vec![];
+        }
+        let mut v = ReverseAccessorVisitor {
+            diagnostics: vec![],
+            filename: ctx.filename.to_string(),
+            graph: ctx.graph,
+        };
         v.visit_body(&ctx.module.body);
         v.diagnostics
     }
 }
 
-struct ReverseAccessorVisitor<'g> { diagnostics: Vec<Diagnostic>, filename: String, graph: &'g thorn_api::AppGraph }
+struct ReverseAccessorVisitor<'g> {
+    diagnostics: Vec<Diagnostic>,
+    filename: String,
+    graph: &'g thorn_api::AppGraph,
+}
 
 impl<'a, 'g> Visitor<'a> for ReverseAccessorVisitor<'g> {
     fn visit_expr(&mut self, expr: &'a Expr) {
@@ -286,8 +469,10 @@ impl<'a, 'g> Visitor<'a> for ReverseAccessorVisitor<'g> {
             if let Some(model_name_lower) = accessor.strip_suffix("_set") {
                 for model in &self.graph.models {
                     for rel in &model.relations {
-                        if matches!(rel.kind, thorn_api::RelationKind::ForeignKey | thorn_api::RelationKind::OneToOne)
-                            && model.name.to_lowercase() == model_name_lower
+                        if matches!(
+                            rel.kind,
+                            thorn_api::RelationKind::ForeignKey | thorn_api::RelationKind::OneToOne
+                        ) && model.name.to_lowercase() == model_name_lower
                             && !rel.related_name.is_empty()
                             && rel.related_name != accessor
                             && rel.related_name != "+"
@@ -307,16 +492,28 @@ impl<'a, 'g> Visitor<'a> for ReverseAccessorVisitor<'g> {
 pub struct ForeignKeyIdAccess;
 
 impl AstCheck for ForeignKeyIdAccess {
-    fn code(&self) -> &'static str { "DJ207" }
+    fn code(&self) -> &'static str {
+        "DJ207"
+    }
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
-        if ctx.graph.models.is_empty() { return vec![]; }
-        let mut v = FKIdVisitor { diagnostics: vec![], filename: ctx.filename.to_string(), graph: ctx.graph };
+        if ctx.graph.models.is_empty() {
+            return vec![];
+        }
+        let mut v = FKIdVisitor {
+            diagnostics: vec![],
+            filename: ctx.filename.to_string(),
+            graph: ctx.graph,
+        };
         v.visit_body(&ctx.module.body);
         v.diagnostics
     }
 }
 
-struct FKIdVisitor<'g> { diagnostics: Vec<Diagnostic>, filename: String, graph: &'g thorn_api::AppGraph }
+struct FKIdVisitor<'g> {
+    diagnostics: Vec<Diagnostic>,
+    filename: String,
+    graph: &'g thorn_api::AppGraph,
+}
 
 impl<'a, 'g> Visitor<'a> for FKIdVisitor<'g> {
     fn visit_expr(&mut self, expr: &'a Expr) {
@@ -324,11 +521,18 @@ impl<'a, 'g> Visitor<'a> for FKIdVisitor<'g> {
             if matches!(outer.attr.as_str(), "id" | "pk") {
                 if let Expr::Attribute(inner) = outer.value.as_ref() {
                     let field_name = inner.attr.as_str();
-                    let is_self = matches!(inner.value.as_ref(), Expr::Name(n) if n.id.as_str() == "self");
+                    let is_self =
+                        matches!(inner.value.as_ref(), Expr::Name(n) if n.id.as_str() == "self");
                     if is_self {
                         for model in &self.graph.models {
                             for rel in &model.relations {
-                                if rel.name == field_name && matches!(rel.kind, thorn_api::RelationKind::ForeignKey | thorn_api::RelationKind::OneToOne) {
+                                if rel.name == field_name
+                                    && matches!(
+                                        rel.kind,
+                                        thorn_api::RelationKind::ForeignKey
+                                            | thorn_api::RelationKind::OneToOne
+                                    )
+                                {
                                     self.diagnostics.push(Diagnostic::new("DJ207", format!("'self.{field_name}.{}' triggers a DB query. Use 'self.{field_name}_id' — reads the cached column directly.", outer.attr.as_str()), &self.filename).with_range(expr.range()));
                                     return;
                                 }
@@ -371,37 +575,55 @@ fn extract_model_queryset_call(expr: &Expr) -> Option<(String, String)> {
 fn is_serializer(class: &StmtClassDef) -> bool {
     class.arguments.as_ref().is_some_and(|args| {
         args.args.iter().any(|base| match base {
-            Expr::Attribute(a) => matches!(a.attr.as_str(), "ModelSerializer" | "Serializer" | "HyperlinkedModelSerializer"),
-            Expr::Name(n) => matches!(n.id.as_str(), "ModelSerializer" | "Serializer" | "HyperlinkedModelSerializer"),
+            Expr::Attribute(a) => matches!(
+                a.attr.as_str(),
+                "ModelSerializer" | "Serializer" | "HyperlinkedModelSerializer"
+            ),
+            Expr::Name(n) => matches!(
+                n.id.as_str(),
+                "ModelSerializer" | "Serializer" | "HyperlinkedModelSerializer"
+            ),
             _ => false,
         })
     })
 }
 
-fn extract_meta_model_and_fields(class: &StmtClassDef) -> Option<(String, Vec<(String, ruff_text_size::TextRange)>)> {
+fn extract_meta_model_and_fields(
+    class: &StmtClassDef,
+) -> Option<(String, Vec<(String, ruff_text_size::TextRange)>)> {
     let mut model_name = None;
     let mut field_names = Vec::new();
 
     for stmt in &class.body {
         if let Stmt::ClassDef(meta) = stmt {
-            if meta.name.as_str() != "Meta" { continue; }
+            if meta.name.as_str() != "Meta" {
+                continue;
+            }
             for meta_stmt in &meta.body {
                 if let Stmt::Assign(assign) = meta_stmt {
                     for target in &assign.targets {
                         if let Expr::Name(n) = target {
                             match n.id.as_str() {
-                                "model" => { model_name = extract_name_from_expr(&assign.value); }
+                                "model" => {
+                                    model_name = extract_name_from_expr(&assign.value);
+                                }
                                 "fields" => {
                                     if let Expr::List(list) = assign.value.as_ref() {
                                         for elt in &list.elts {
                                             if let Expr::StringLiteral(s) = elt {
-                                                field_names.push((s.value.to_str().to_string(), elt.range()));
+                                                field_names.push((
+                                                    s.value.to_str().to_string(),
+                                                    elt.range(),
+                                                ));
                                             }
                                         }
                                     } else if let Expr::Tuple(tuple) = assign.value.as_ref() {
                                         for elt in &tuple.elts {
                                             if let Expr::StringLiteral(s) = elt {
-                                                field_names.push((s.value.to_str().to_string(), elt.range()));
+                                                field_names.push((
+                                                    s.value.to_str().to_string(),
+                                                    elt.range(),
+                                                ));
                                             }
                                         }
                                     } else if let Expr::StringLiteral(s) = assign.value.as_ref() {

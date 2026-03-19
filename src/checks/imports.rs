@@ -169,26 +169,13 @@ impl<'a> ImportCollector<'a> {
         before.chars().filter(|c| *c == '\n').count() as u32 + 1
     }
 
-    fn add_import_from(
-        &mut self,
-        import: &StmtImportFrom,
-        is_type_checking: bool,
-    ) {
+    fn add_import_from(&mut self, import: &StmtImportFrom, is_type_checking: bool) {
         let level = import.level;
-        let raw_module = import
-            .module
-            .as_ref()
-            .map(|m| m.as_str())
-            .unwrap_or("");
+        let raw_module = import.module.as_ref().map(|m| m.as_str()).unwrap_or("");
 
         let module = if level > 0 {
             // Relative import
-            match resolve_relative_import(
-                self.current_file,
-                level,
-                raw_module,
-                self.project_dir,
-            ) {
+            match resolve_relative_import(self.current_file, level, raw_module, self.project_dir) {
                 Some(m) => m,
                 None => return,
             }
@@ -314,13 +301,11 @@ fn build_import_graph(project_dir: &Path) -> HashMap<String, ModuleInfo> {
             Err(_) => continue,
         };
 
-        let parsed = match ruff_python_parser::parse(
-            &source,
-            ruff_python_parser::Mode::Module.into(),
-        ) {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
+        let parsed =
+            match ruff_python_parser::parse(&source, ruff_python_parser::Mode::Module.into()) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
 
         let module_ast = match parsed.into_syntax().module() {
             Some(m) => m.clone(),
@@ -428,18 +413,23 @@ fn dfs<'a>(
     if let Some(neighbors) = edges.get(node) {
         for &neighbor in neighbors {
             if !visited.contains(neighbor) {
-                dfs(neighbor, edges, visited, rec_stack, in_stack, diagnostics, reported, graph);
+                dfs(
+                    neighbor,
+                    edges,
+                    visited,
+                    rec_stack,
+                    in_stack,
+                    diagnostics,
+                    reported,
+                    graph,
+                );
             } else if in_stack.contains(neighbor) {
                 // Back edge found – extract the cycle path
-                let cycle_start = rec_stack
-                    .iter()
-                    .position(|&n| n == neighbor)
-                    .unwrap_or(0);
+                let cycle_start = rec_stack.iter().position(|&n| n == neighbor).unwrap_or(0);
                 let cycle: Vec<&str> = rec_stack[cycle_start..].to_vec();
 
                 // Build a canonical key to avoid duplicate reports
-                let mut key: Vec<String> =
-                    cycle.iter().map(|s| s.to_string()).collect();
+                let mut key: Vec<String> = cycle.iter().map(|s| s.to_string()).collect();
                 key.sort_unstable();
 
                 // Suppress any cycle that passes through an __init__.py module.
@@ -449,7 +439,9 @@ fn dfs<'a>(
                 // Self-cycles (len == 1) are naturally covered because the
                 // single node would itself be __init__.py.
                 let involves_init = cycle.iter().any(|m| {
-                    graph.get(*m).is_some_and(|info| info.file_path.ends_with("__init__.py"))
+                    graph
+                        .get(*m)
+                        .is_some_and(|info| info.file_path.ends_with("__init__.py"))
                 });
 
                 if !involves_init && !reported.contains(&key) {
@@ -468,14 +460,15 @@ fn dfs<'a>(
                         .unwrap_or(first_module);
 
                     // Find the line of the import that creates the back-edge
-                    let line = graph
-                        .get(first_module)
-                        .and_then(|m| {
-                            m.imports
-                                .iter()
-                                .find(|imp| imp.module == neighbor || imp.module.starts_with(&format!("{neighbor}.")))
-                                .map(|imp| imp.line)
-                        });
+                    let line = graph.get(first_module).and_then(|m| {
+                        m.imports
+                            .iter()
+                            .find(|imp| {
+                                imp.module == neighbor
+                                    || imp.module.starts_with(&format!("{neighbor}."))
+                            })
+                            .map(|imp| imp.line)
+                    });
 
                     let mut d = Diagnostic::new(
                         "DJ042",
@@ -530,13 +523,11 @@ fn detect_unused_imports(graph: &HashMap<String, ModuleInfo>) -> Vec<Diagnostic>
             Err(_) => continue,
         };
 
-        let parsed = match ruff_python_parser::parse(
-            &source,
-            ruff_python_parser::Mode::Module.into(),
-        ) {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
+        let parsed =
+            match ruff_python_parser::parse(&source, ruff_python_parser::Mode::Module.into()) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
 
         let module_ast = match parsed.into_syntax().module() {
             Some(m) => m.clone(),
@@ -652,7 +643,10 @@ mod tests {
         let root = tmp.path();
         write_file(root, "myapp/models/user.py", "");
         let file = root.join("myapp/models/user.py");
-        assert_eq!(path_to_module(&file, root), Some("myapp.models.user".into()));
+        assert_eq!(
+            path_to_module(&file, root),
+            Some("myapp.models.user".into())
+        );
     }
 
     #[test]
@@ -714,7 +708,11 @@ mod tests {
     fn test_build_graph_skips_migrations() {
         let tmp = make_project();
         let root = tmp.path();
-        write_file(root, "app/migrations/0001_initial.py", "from django.db import models");
+        write_file(
+            root,
+            "app/migrations/0001_initial.py",
+            "from django.db import models",
+        );
         write_file(root, "app/models.py", "");
         let graph = build_import_graph(root);
         // migrations should be skipped
@@ -726,7 +724,11 @@ mod tests {
     fn test_build_graph_skips_venv() {
         let tmp = make_project();
         let root = tmp.path();
-        write_file(root, ".venv/lib/python3/site-packages/django/db/models.py", "");
+        write_file(
+            root,
+            ".venv/lib/python3/site-packages/django/db/models.py",
+            "",
+        );
         write_file(root, "app/models.py", "");
         let graph = build_import_graph(root);
         assert!(!graph.keys().any(|k| k.contains("django")));
@@ -761,7 +763,10 @@ mod tests {
             .iter()
             .find(|i| i.module == "app.models")
             .expect("import");
-        assert!(imp.is_type_checking, "should be marked as type-checking only");
+        assert!(
+            imp.is_type_checking,
+            "should be marked as type-checking only"
+        );
     }
 
     // ── Circular import detection ─────────────────────────────────────────
@@ -818,7 +823,10 @@ mod tests {
         write_file(root, "b.py", "from a import AClass\n");
         let graph = build_import_graph(root);
         let diags = detect_cycles(&graph);
-        assert!(diags.is_empty(), "TYPE_CHECKING import should not trigger cycle");
+        assert!(
+            diags.is_empty(),
+            "TYPE_CHECKING import should not trigger cycle"
+        );
     }
 
     // ── Unused import detection ───────────────────────────────────────────
@@ -869,7 +877,10 @@ mod tests {
         let graph = build_import_graph(root);
         let diags = detect_unused_imports(&graph);
         let dj043: Vec<_> = diags.iter().filter(|d| d.code == "DJ043").collect();
-        assert!(dj043.is_empty(), "non-Django import should not be flagged by DJ043");
+        assert!(
+            dj043.is_empty(),
+            "non-Django import should not be flagged by DJ043"
+        );
     }
 
     #[test]
@@ -894,7 +905,10 @@ mod tests {
         );
         let graph = build_import_graph(root);
         let diags = detect_unused_imports(&graph);
-        assert!(!diags.is_empty(), "unused serializer import should be flagged");
+        assert!(
+            !diags.is_empty(),
+            "unused serializer import should be flagged"
+        );
         assert_eq!(diags[0].code, "DJ043");
     }
 
@@ -985,11 +999,7 @@ mod tests {
         let tmp = make_project();
         let root = tmp.path();
         // Package __init__.py re-exports Foo for callers of the package
-        write_file(
-            root,
-            "app/__init__.py",
-            "from app.models import Foo\n",
-        );
+        write_file(root, "app/__init__.py", "from app.models import Foo\n");
         write_file(root, "app/models.py", "");
         let graph = build_import_graph(root);
         let diags = detect_unused_imports(&graph);
@@ -1039,8 +1049,16 @@ mod tests {
     fn test_direct_cycle_without_init_still_flagged() {
         let tmp = make_project();
         let root = tmp.path();
-        write_file(root, "app/check.py", "from app.screening import ScreeningModel\n");
-        write_file(root, "app/screening.py", "from app.check import CheckModel\n");
+        write_file(
+            root,
+            "app/check.py",
+            "from app.screening import ScreeningModel\n",
+        );
+        write_file(
+            root,
+            "app/screening.py",
+            "from app.check import CheckModel\n",
+        );
         let graph = build_import_graph(root);
         let diags = detect_cycles(&graph);
         let dj042: Vec<_> = diags.iter().filter(|d| d.code == "DJ042").collect();

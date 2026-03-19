@@ -45,10 +45,7 @@ fn run_django_system_checks(py: Python<'_>) -> PyResult<Vec<Diagnostic>> {
         let level: i32 = check.getattr("level")?.extract()?;
         let msg: String = check.getattr("msg")?.extract()?;
         let check_id: String = check.getattr("id")?.extract()?;
-        let hint: String = check
-            .getattr("hint")?
-            .extract()
-            .unwrap_or_default();
+        let hint: String = check.getattr("hint")?.extract().unwrap_or_default();
 
         // Map Django check levels to our codes
         // 0=DEBUG, 10=INFO, 20=WARNING, 25=ERROR, 30=CRITICAL, 40=FATAL
@@ -109,16 +106,33 @@ fn validate_models(py: Python<'_>) -> PyResult<Vec<Diagnostic>> {
             .unwrap_or_default();
 
         // Skip third-party models
-        let third_party_prefixes = ["django.", "rest_framework.", "allauth.", "guardian.",
-            "django_q.", "django_otp.", "otp_", "oauth2_provider.",
-            "axes.", "simple_history.", "django_filters.",
-            "drf_spectacular.", "corsheaders.", "debug_toolbar.",
-            "storages.", "celery.", "kombu.", "djstripe."];
+        let third_party_prefixes = [
+            "django.",
+            "rest_framework.",
+            "allauth.",
+            "guardian.",
+            "django_q.",
+            "django_otp.",
+            "otp_",
+            "oauth2_provider.",
+            "axes.",
+            "simple_history.",
+            "django_filters.",
+            "drf_spectacular.",
+            "corsheaders.",
+            "debug_toolbar.",
+            "storages.",
+            "celery.",
+            "kombu.",
+            "djstripe.",
+        ];
         let is_third_party = third_party_prefixes.iter().any(|p| module.starts_with(p))
             || source_file.contains("site-packages")
             || source_file.contains("/venv/")
             || source_file.contains("/.venv/");
-        if is_third_party { continue; }
+        if is_third_party {
+            continue;
+        }
 
         // Check for models without __str__ by walking the MRO
         let mro = model_cls.getattr("__mro__")?;

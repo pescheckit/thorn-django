@@ -58,27 +58,36 @@ pub fn read_django_config(toml_content: &str) -> DjangoConfig {
         Err(_) => return cfg,
     };
 
-    let section = match doc
-        .get("tool")
-        .and_then(|t| t.get("thorn-django"))
-    {
+    let section = match doc.get("tool").and_then(|t| t.get("thorn-django")) {
         Some(s) => s,
         None => return cfg,
     };
 
-    if let Some(v) = section.get("max-nesting-depth").and_then(|v| v.as_integer()) {
+    if let Some(v) = section
+        .get("max-nesting-depth")
+        .and_then(|v| v.as_integer())
+    {
         cfg.max_nesting_depth = v.max(1) as u32;
     }
-    if let Some(v) = section.get("max-function-args").and_then(|v| v.as_integer()) {
+    if let Some(v) = section
+        .get("max-function-args")
+        .and_then(|v| v.as_integer())
+    {
         cfg.max_function_args = v.max(1) as u32;
     }
-    if let Some(v) = section.get("max-return-statements").and_then(|v| v.as_integer()) {
+    if let Some(v) = section
+        .get("max-return-statements")
+        .and_then(|v| v.as_integer())
+    {
         cfg.max_return_statements = v.max(1) as u32;
     }
     if let Some(v) = section.get("max-branches").and_then(|v| v.as_integer()) {
         cfg.max_branches = v.max(1) as u32;
     }
-    if let Some(v) = section.get("max-local-variables").and_then(|v| v.as_integer()) {
+    if let Some(v) = section
+        .get("max-local-variables")
+        .and_then(|v| v.as_integer())
+    {
         cfg.max_local_variables = v.max(1) as u32;
     }
     if let Some(v) = section.get("max-statements").and_then(|v| v.as_integer()) {
@@ -87,7 +96,10 @@ pub fn read_django_config(toml_content: &str) -> DjangoConfig {
     if let Some(v) = section.get("max-model-fields").and_then(|v| v.as_integer()) {
         cfg.max_model_fields = v.max(1) as u32;
     }
-    if let Some(v) = section.get("max-class-methods").and_then(|v| v.as_integer()) {
+    if let Some(v) = section
+        .get("max-class-methods")
+        .and_then(|v| v.as_integer())
+    {
         cfg.max_class_methods = v.max(1) as u32;
     }
 

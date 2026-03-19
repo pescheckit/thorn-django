@@ -158,19 +158,16 @@ fn extract_relations(_py: Python<'_>, meta: &Bound<'_, PyAny>) -> PyResult<Vec<R
             .and_then(|v| v.extract())
             .unwrap_or_default();
 
-        let related_model = field
-            .getattr("related_model")
-            .or_else(|_| {
-                field
-                    .getattr("remote_field")
-                    .and_then(|rf| rf.getattr("model"))
-            });
+        let related_model = field.getattr("related_model").or_else(|_| {
+            field
+                .getattr("remote_field")
+                .and_then(|rf| rf.getattr("model"))
+        });
 
         let (to_model, to_model_app) = match related_model {
             Ok(rm) => {
                 let to_model: String = rm.getattr("__name__")?.extract()?;
-                let to_model_app: String =
-                    rm.getattr("_meta")?.getattr("app_label")?.extract()?;
+                let to_model_app: String = rm.getattr("_meta")?.getattr("app_label")?.extract()?;
                 (to_model, to_model_app)
             }
             Err(_) => continue,
@@ -266,13 +263,18 @@ fn extract_methods(py: Python<'_>, model_cls: &Bound<'_, PyAny>) -> PyResult<Vec
     for cls in model_cls.getattr("__mro__")?.try_iter()? {
         let cls = cls?;
         let cls_name: String = cls.getattr("__name__")?.extract()?;
-        if cls_name == "Model" || cls_name == "object" { break; }
+        if cls_name == "Model" || cls_name == "object" {
+            break;
+        }
         if let Ok(dict) = cls.getattr("__dict__") {
             if let Ok(items) = dict.call_method0("items") {
                 for item in (items.try_iter()?).flatten() {
-                    if let Ok((key, val)) = item.extract::<(String, pyo3::Bound<'_, pyo3::PyAny>)>() {
-                        if !key.starts_with('_') && val.is_instance(&property_type).unwrap_or(false)
-                            && !methods.contains(&key) {
+                    if let Ok((key, val)) = item.extract::<(String, pyo3::Bound<'_, pyo3::PyAny>)>()
+                    {
+                        if !key.starts_with('_')
+                            && val.is_instance(&property_type).unwrap_or(false)
+                            && !methods.contains(&key)
+                        {
                             methods.push(key);
                         }
                     }
@@ -318,13 +320,25 @@ fn extract_settings(py: Python<'_>) -> PyResult<DjangoSettings> {
     // Store framework-specific settings in the extra map
     let mut extra = std::collections::HashMap::new();
     if let Ok(drf) = settings.getattr("REST_FRAMEWORK") {
-        if let Ok(auth) = drf.get_item("DEFAULT_AUTHENTICATION_CLASSES").and_then(|v| v.str()) {
-            extra.insert("drf.default_authentication_classes".into(), auth.to_string());
+        if let Ok(auth) = drf
+            .get_item("DEFAULT_AUTHENTICATION_CLASSES")
+            .and_then(|v| v.str())
+        {
+            extra.insert(
+                "drf.default_authentication_classes".into(),
+                auth.to_string(),
+            );
         }
-        if let Ok(perm) = drf.get_item("DEFAULT_PERMISSION_CLASSES").and_then(|v| v.str()) {
+        if let Ok(perm) = drf
+            .get_item("DEFAULT_PERMISSION_CLASSES")
+            .and_then(|v| v.str())
+        {
             extra.insert("drf.default_permission_classes".into(), perm.to_string());
         }
-        if let Ok(page) = drf.get_item("DEFAULT_PAGINATION_CLASS").and_then(|v| v.extract::<String>()) {
+        if let Ok(page) = drf
+            .get_item("DEFAULT_PAGINATION_CLASS")
+            .and_then(|v| v.extract::<String>())
+        {
             extra.insert("drf.default_pagination_class".into(), page);
         }
     }
@@ -407,8 +421,14 @@ fn extract_choices(field: &Bound<'_, PyAny>) -> PyResult<Vec<(String, String)>> 
     let mut result = Vec::new();
     for choice in choices.try_iter()? {
         let choice = choice?;
-        let value: String = choice.get_item(0).map(|v| format!("{v}")).unwrap_or_default();
-        let label: String = choice.get_item(1).map(|v| format!("{v}")).unwrap_or_default();
+        let value: String = choice
+            .get_item(0)
+            .map(|v| format!("{v}"))
+            .unwrap_or_default();
+        let label: String = choice
+            .get_item(1)
+            .map(|v| format!("{v}"))
+            .unwrap_or_default();
         result.push((value, label));
     }
     Ok(result)

@@ -8,10 +8,15 @@ use thorn_api::{AstCheck, CheckContext, Diagnostic};
 pub struct NullableStringField;
 
 impl AstCheck for NullableStringField {
-    fn code(&self) -> &'static str { "DJ001" }
+    fn code(&self) -> &'static str {
+        "DJ001"
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
-        let mut v = NullableStringFieldVisitor { diags: vec![], filename: ctx.filename };
+        let mut v = NullableStringFieldVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -23,8 +28,14 @@ struct NullableStringFieldVisitor<'a> {
 }
 
 const STRING_FIELD_NAMES: &[&str] = &[
-    "CharField", "TextField", "EmailField", "URLField",
-    "SlugField", "FilePathField", "FileField", "ImageField",
+    "CharField",
+    "TextField",
+    "EmailField",
+    "URLField",
+    "SlugField",
+    "FilePathField",
+    "FileField",
+    "ImageField",
     // GenericIPAddressField and IPAddressField legitimately use null=True per Django docs
     // (they store NULL in the DB for "no address" rather than an empty string)
 ];
@@ -63,10 +74,18 @@ impl<'a> Visitor<'_> for NullableStringFieldVisitor<'a> {
 pub struct ModelFormUsesExclude;
 
 impl AstCheck for ModelFormUsesExclude {
-    fn code(&self) -> &'static str { "DJ002" }
+    fn code(&self) -> &'static str {
+        "DJ002"
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
-        let mut v = ModelFormExcludeVisitor { diags: vec![], filename: ctx.filename, class_name: String::new(), in_modelform: false, in_meta: false };
+        let mut v = ModelFormExcludeVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+            class_name: String::new(),
+            in_modelform: false,
+            in_meta: false,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -135,10 +154,15 @@ impl<'a> Visitor<'_> for ModelFormExcludeVisitor<'a> {
 pub struct RawSqlUsage;
 
 impl AstCheck for RawSqlUsage {
-    fn code(&self) -> &'static str { "DJ003" }
+    fn code(&self) -> &'static str {
+        "DJ003"
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
-        let mut v = RawSqlVisitor { diags: vec![], filename: ctx.filename };
+        let mut v = RawSqlVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -175,10 +199,15 @@ impl<'a> Visitor<'_> for RawSqlVisitor<'a> {
 pub struct LocalsInRender;
 
 impl AstCheck for LocalsInRender {
-    fn code(&self) -> &'static str { "DJ004" }
+    fn code(&self) -> &'static str {
+        "DJ004"
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
-        let mut v = LocalsInRenderVisitor { diags: vec![], filename: ctx.filename };
+        let mut v = LocalsInRenderVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -222,7 +251,9 @@ impl<'a> Visitor<'_> for LocalsInRenderVisitor<'a> {
 pub struct ModelWithoutStrMethod;
 
 impl AstCheck for ModelWithoutStrMethod {
-    fn code(&self) -> &'static str { "DJ005" }
+    fn code(&self) -> &'static str {
+        "DJ005"
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
         let mut diags = Vec::new();
@@ -259,12 +290,19 @@ impl AstCheck for ModelWithoutStrMethod {
 pub struct ForeignKeyMissingOnDelete;
 
 impl AstCheck for ForeignKeyMissingOnDelete {
-    fn code(&self) -> &'static str { "DJ006" }
+    fn code(&self) -> &'static str {
+        "DJ006"
+    }
 
-    fn level(&self) -> thorn_api::Level { thorn_api::Level::Fix }
+    fn level(&self) -> thorn_api::Level {
+        thorn_api::Level::Fix
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
-        let mut v = FkOnDeleteVisitor { diags: vec![], filename: ctx.filename };
+        let mut v = FkOnDeleteVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -285,9 +323,11 @@ impl<'a> Visitor<'_> for FkOnDeleteVisitor<'a> {
             };
             if let Some(name) = fn_name {
                 if name == "ForeignKey" || name == "OneToOneField" {
-                    let has_on_delete = call.arguments.keywords.iter().any(|kw| {
-                        kw.arg.as_ref().is_some_and(|a| a.as_str() == "on_delete")
-                    });
+                    let has_on_delete = call
+                        .arguments
+                        .keywords
+                        .iter()
+                        .any(|kw| kw.arg.as_ref().is_some_and(|a| a.as_str() == "on_delete"));
                     if !has_on_delete {
                         self.diags.push(
                             Diagnostic::new(
@@ -310,9 +350,13 @@ impl<'a> Visitor<'_> for FkOnDeleteVisitor<'a> {
 pub struct ModelFormFieldsAll;
 
 impl AstCheck for ModelFormFieldsAll {
-    fn code(&self) -> &'static str { "DJ007" }
+    fn code(&self) -> &'static str {
+        "DJ007"
+    }
 
-    fn level(&self) -> thorn_api::Level { thorn_api::Level::Fix }
+    fn level(&self) -> thorn_api::Level {
+        thorn_api::Level::Fix
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
         let mut v = ModelFormFieldsAllVisitor {
@@ -394,14 +438,19 @@ impl<'a> Visitor<'_> for ModelFormFieldsAllVisitor<'a> {
 pub struct RandomOrderBy;
 
 impl AstCheck for RandomOrderBy {
-    fn code(&self) -> &'static str { "DJ008" }
+    fn code(&self) -> &'static str {
+        "DJ008"
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
         // Seeder/fixture files intentionally use order_by('?') for data variety
         if is_seeder_or_fixture(ctx.filename) {
             return vec![];
         }
-        let mut v = RandomOrderByVisitor { diags: vec![], filename: ctx.filename };
+        let mut v = RandomOrderByVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -446,10 +495,15 @@ impl<'a> Visitor<'_> for RandomOrderByVisitor<'a> {
 pub struct QuerysetBoolEval;
 
 impl AstCheck for QuerysetBoolEval {
-    fn code(&self) -> &'static str { "DJ009" }
+    fn code(&self) -> &'static str {
+        "DJ009"
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
-        let mut v = QuerysetBoolEvalVisitor { diags: vec![], filename: ctx.filename };
+        let mut v = QuerysetBoolEvalVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -496,10 +550,15 @@ impl<'a> Visitor<'_> for QuerysetBoolEvalVisitor<'a> {
 pub struct QuerysetLen;
 
 impl AstCheck for QuerysetLen {
-    fn code(&self) -> &'static str { "DJ010" }
+    fn code(&self) -> &'static str {
+        "DJ010"
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
-        let mut v = QuerysetLenVisitor { diags: vec![], filename: ctx.filename };
+        let mut v = QuerysetLenVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -539,7 +598,9 @@ impl<'a> Visitor<'_> for QuerysetLenVisitor<'a> {
 pub struct MissingFExpression;
 
 impl AstCheck for MissingFExpression {
-    fn code(&self) -> &'static str { "DJ011" }
+    fn code(&self) -> &'static str {
+        "DJ011"
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
         let mut v = MissingFExprVisitor {
@@ -624,16 +685,25 @@ impl<'a> Visitor<'_> for MissingFExprVisitor<'a> {
 pub struct RawSqlInjection;
 
 impl AstCheck for RawSqlInjection {
-    fn code(&self) -> &'static str { "DJ014" }
+    fn code(&self) -> &'static str {
+        "DJ014"
+    }
 
     // Downgraded from High: f-string SQL also catches safe constant interpolation.
     // A future version should track whether interpolated variables are module-level constants.
-    fn level(&self) -> thorn_api::Level { thorn_api::Level::Improve }
+    fn level(&self) -> thorn_api::Level {
+        thorn_api::Level::Improve
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
         // Skip migration files — SQL in migrations is developer-written, not user input
-        if ctx.filename.contains("/migrations/") { return vec![]; }
-        let mut v = RawSqlInjectionVisitor { diags: vec![], filename: ctx.filename };
+        if ctx.filename.contains("/migrations/") {
+            return vec![];
+        }
+        let mut v = RawSqlInjectionVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -709,7 +779,9 @@ impl<'a> Visitor<'_> for RawSqlInjectionVisitor<'a> {
 pub struct DefaultMetaOrdering;
 
 impl AstCheck for DefaultMetaOrdering {
-    fn code(&self) -> &'static str { "DJ015" }
+    fn code(&self) -> &'static str {
+        "DJ015"
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
         let mut v = DefaultMetaOrderingVisitor {
@@ -787,9 +859,13 @@ impl<'a> Visitor<'_> for DefaultMetaOrderingVisitor<'a> {
 pub struct CsrfExempt;
 
 impl AstCheck for CsrfExempt {
-    fn code(&self) -> &'static str { "DJ017" }
+    fn code(&self) -> &'static str {
+        "DJ017"
+    }
 
-    fn level(&self) -> thorn_api::Level { thorn_api::Level::Fix }
+    fn level(&self) -> thorn_api::Level {
+        thorn_api::Level::Fix
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
         // Skip if the filename itself is a webhook/callback/api file
@@ -801,7 +877,10 @@ impl AstCheck for CsrfExempt {
             return vec![];
         }
 
-        let mut v = CsrfExemptVisitor { diags: vec![], filename: ctx.filename };
+        let mut v = CsrfExemptVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -821,12 +900,10 @@ impl<'a> Visitor<'_> for CsrfExemptVisitor<'a> {
                 .any(|kw| fn_name_lower.contains(kw));
 
             if !skip_fn {
-                let has_csrf_exempt = func.decorator_list.iter().any(|dec| {
-                    match &dec.expression {
-                        Expr::Name(n) => n.id.as_str() == "csrf_exempt",
-                        Expr::Attribute(a) => a.attr.as_str() == "csrf_exempt",
-                        _ => false,
-                    }
+                let has_csrf_exempt = func.decorator_list.iter().any(|dec| match &dec.expression {
+                    Expr::Name(n) => n.id.as_str() == "csrf_exempt",
+                    Expr::Attribute(a) => a.attr.as_str() == "csrf_exempt",
+                    _ => false,
                 });
                 if has_csrf_exempt {
                     self.diags.push(
@@ -849,10 +926,15 @@ impl<'a> Visitor<'_> for CsrfExemptVisitor<'a> {
 pub struct RequestPostBoolCheck;
 
 impl AstCheck for RequestPostBoolCheck {
-    fn code(&self) -> &'static str { "DJ018" }
+    fn code(&self) -> &'static str {
+        "DJ018"
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
-        let mut v = RequestPostBoolVisitor { diags: vec![], filename: ctx.filename };
+        let mut v = RequestPostBoolVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -905,10 +987,15 @@ impl<'a> Visitor<'_> for RequestPostBoolVisitor<'a> {
 pub struct CountGreaterThanZero;
 
 impl AstCheck for CountGreaterThanZero {
-    fn code(&self) -> &'static str { "DJ019" }
+    fn code(&self) -> &'static str {
+        "DJ019"
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
-        let mut v = CountGtZeroVisitor { diags: vec![], filename: ctx.filename };
+        let mut v = CountGtZeroVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -945,14 +1032,16 @@ impl<'a> Visitor<'_> for CountGtZeroVisitor<'a> {
 
             let flagged = if left_is_count {
                 cmp.comparators.first().is_some_and(is_zero_literal)
-                    && cmp.ops.first().is_some_and(|op| {
-                        matches!(op, CmpOp::Gt | CmpOp::NotEq | CmpOp::Eq)
-                    })
+                    && cmp
+                        .ops
+                        .first()
+                        .is_some_and(|op| matches!(op, CmpOp::Gt | CmpOp::NotEq | CmpOp::Eq))
             } else if right_is_count {
                 is_zero_literal(cmp.left.as_ref())
-                    && cmp.ops.first().is_some_and(|op| {
-                        matches!(op, CmpOp::Lt | CmpOp::NotEq | CmpOp::Eq)
-                    })
+                    && cmp
+                        .ops
+                        .first()
+                        .is_some_and(|op| matches!(op, CmpOp::Lt | CmpOp::NotEq | CmpOp::Eq))
             } else {
                 false
             };
@@ -977,10 +1066,15 @@ impl<'a> Visitor<'_> for CountGtZeroVisitor<'a> {
 pub struct SelectRelatedNoArgs;
 
 impl AstCheck for SelectRelatedNoArgs {
-    fn code(&self) -> &'static str { "DJ020" }
+    fn code(&self) -> &'static str {
+        "DJ020"
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
-        let mut v = SelectRelatedNoArgsVisitor { diags: vec![], filename: ctx.filename };
+        let mut v = SelectRelatedNoArgsVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -996,7 +1090,8 @@ impl<'a> Visitor<'_> for SelectRelatedNoArgsVisitor<'a> {
         if let Expr::Call(call) = expr {
             if let Expr::Attribute(attr) = call.func.as_ref() {
                 if attr.attr.as_str() == "select_related"
-                    && call.arguments.args.is_empty() && call.arguments.keywords.is_empty()
+                    && call.arguments.args.is_empty()
+                    && call.arguments.keywords.is_empty()
                 {
                     self.diags.push(
                         Diagnostic::new(
@@ -1018,7 +1113,9 @@ impl<'a> Visitor<'_> for SelectRelatedNoArgsVisitor<'a> {
 pub struct FloatFieldForMoney;
 
 impl AstCheck for FloatFieldForMoney {
-    fn code(&self) -> &'static str { "DJ021" }
+    fn code(&self) -> &'static str {
+        "DJ021"
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
         let mut v = FloatFieldForMoneyVisitor {
@@ -1040,8 +1137,8 @@ struct FloatFieldForMoneyVisitor<'a> {
 }
 
 const MONEY_KEYWORDS: &[&str] = &[
-    "price", "cost", "amount", "fee", "total", "balance",
-    "salary", "payment", "money", "currency", "rate",
+    "price", "cost", "amount", "fee", "total", "balance", "salary", "payment", "money", "currency",
+    "rate",
 ];
 
 fn target_name_is_money(name: &str) -> bool {
@@ -1117,12 +1214,19 @@ impl<'a> Visitor<'_> for FloatFieldForMoneyVisitor<'a> {
 pub struct MutableDefaultJsonField;
 
 impl AstCheck for MutableDefaultJsonField {
-    fn code(&self) -> &'static str { "DJ022" }
+    fn code(&self) -> &'static str {
+        "DJ022"
+    }
 
-    fn level(&self) -> thorn_api::Level { thorn_api::Level::Fix }
+    fn level(&self) -> thorn_api::Level {
+        thorn_api::Level::Fix
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
-        let mut v = MutableDefaultJsonVisitor { diags: vec![], filename: ctx.filename };
+        let mut v = MutableDefaultJsonVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -1145,10 +1249,7 @@ impl<'a> Visitor<'_> for MutableDefaultJsonVisitor<'a> {
                 if matches!(name.as_str(), "JSONField" | "ArrayField") {
                     for kw in &call.arguments.keywords {
                         if kw.arg.as_ref().is_some_and(|a| a.as_str() == "default") {
-                            let is_mutable = matches!(
-                                &kw.value,
-                                Expr::List(_) | Expr::Dict(_)
-                            );
+                            let is_mutable = matches!(&kw.value, Expr::List(_) | Expr::Dict(_));
                             if is_mutable {
                                 self.diags.push(
                                     Diagnostic::new(
@@ -1173,10 +1274,15 @@ impl<'a> Visitor<'_> for MutableDefaultJsonVisitor<'a> {
 pub struct SignalWithoutDispatchUid;
 
 impl AstCheck for SignalWithoutDispatchUid {
-    fn code(&self) -> &'static str { "DJ023" }
+    fn code(&self) -> &'static str {
+        "DJ023"
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
-        let mut v = SignalDispatchUidVisitor { diags: vec![], filename: ctx.filename };
+        let mut v = SignalDispatchUidVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -1200,7 +1306,9 @@ impl<'a> Visitor<'_> for SignalDispatchUidVisitor<'a> {
                     };
                     if is_receiver {
                         let has_uid = call.arguments.keywords.iter().any(|kw| {
-                            kw.arg.as_ref().is_some_and(|a| a.as_str() == "dispatch_uid")
+                            kw.arg
+                                .as_ref()
+                                .is_some_and(|a| a.as_str() == "dispatch_uid")
                         });
                         if !has_uid {
                             self.diags.push(
@@ -1223,7 +1331,9 @@ impl<'a> Visitor<'_> for SignalDispatchUidVisitor<'a> {
                 if let Expr::Attribute(attr) = call.func.as_ref() {
                     if attr.attr.as_str() == "connect" {
                         let has_uid = call.arguments.keywords.iter().any(|kw| {
-                            kw.arg.as_ref().is_some_and(|a| a.as_str() == "dispatch_uid")
+                            kw.arg
+                                .as_ref()
+                                .is_some_and(|a| a.as_str() == "dispatch_uid")
                         });
                         if !has_uid {
                             self.diags.push(
@@ -1249,14 +1359,17 @@ impl<'a> Visitor<'_> for SignalDispatchUidVisitor<'a> {
 pub struct UniqueTogetherDeprecated;
 
 impl AstCheck for UniqueTogetherDeprecated {
-    fn code(&self) -> &'static str { "DJ024" }
+    fn code(&self) -> &'static str {
+        "DJ024"
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
         let mut v = MetaAttrVisitor {
             diags: vec![],
             filename: ctx.filename,
             code: "DJ024",
-            message: "unique_together is deprecated. Use Meta.constraints with UniqueConstraint instead.",
+            message:
+                "unique_together is deprecated. Use Meta.constraints with UniqueConstraint instead.",
             attr_name: "unique_together",
             in_model: false,
             model_name: String::new(),
@@ -1272,7 +1385,9 @@ impl AstCheck for UniqueTogetherDeprecated {
 pub struct IndexTogetherDeprecated;
 
 impl AstCheck for IndexTogetherDeprecated {
-    fn code(&self) -> &'static str { "DJ025" }
+    fn code(&self) -> &'static str {
+        "DJ025"
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
         let mut v = MetaAttrVisitor {
@@ -1352,7 +1467,9 @@ impl<'a> Visitor<'_> for MetaAttrVisitor<'a> {
 pub struct SaveCreateInLoop;
 
 impl AstCheck for SaveCreateInLoop {
-    fn code(&self) -> &'static str { "DJ026" }
+    fn code(&self) -> &'static str {
+        "DJ026"
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
         if ctx.filename.contains("/tests/") || ctx.filename.contains("/migrations/") {
@@ -1362,7 +1479,10 @@ impl AstCheck for SaveCreateInLoop {
         if is_seeder_or_fixture(ctx.filename) {
             return vec![];
         }
-        let mut v = SaveCreateInLoopVisitor { diags: vec![], filename: ctx.filename };
+        let mut v = SaveCreateInLoopVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -1487,7 +1607,9 @@ impl<'a> Visitor<'_> for LoopDbCallFinder<'a> {
 pub struct CeleryDelayInAtomic;
 
 impl AstCheck for CeleryDelayInAtomic {
-    fn code(&self) -> &'static str { "DJ027" }
+    fn code(&self) -> &'static str {
+        "DJ027"
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
         let mut v = CeleryDelayInAtomicVisitor {
@@ -1565,12 +1687,19 @@ impl<'a> Visitor<'_> for CeleryDelayInAtomicVisitor<'a> {
 pub struct RedirectReverse;
 
 impl AstCheck for RedirectReverse {
-    fn code(&self) -> &'static str { "DJ028" }
+    fn code(&self) -> &'static str {
+        "DJ028"
+    }
 
-    fn level(&self) -> thorn_api::Level { thorn_api::Level::All }
+    fn level(&self) -> thorn_api::Level {
+        thorn_api::Level::All
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
-        let mut v = RedirectReverseVisitor { diags: vec![], filename: ctx.filename };
+        let mut v = RedirectReverseVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -1624,15 +1753,22 @@ impl<'a> Visitor<'_> for RedirectReverseVisitor<'a> {
 pub struct UnfilteredDelete;
 
 impl AstCheck for UnfilteredDelete {
-    fn code(&self) -> &'static str { "DJ029" }
+    fn code(&self) -> &'static str {
+        "DJ029"
+    }
 
-    fn level(&self) -> thorn_api::Level { thorn_api::Level::Improve }
+    fn level(&self) -> thorn_api::Level {
+        thorn_api::Level::Improve
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
         if ctx.filename.contains("/tests/") {
             return vec![];
         }
-        let mut v = UnfilteredDeleteVisitor { diags: vec![], filename: ctx.filename };
+        let mut v = UnfilteredDeleteVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -1695,12 +1831,20 @@ impl<'a> Visitor<'_> for UnfilteredDeleteVisitor<'a> {
 pub struct DRFAllowAnyPermission;
 
 impl AstCheck for DRFAllowAnyPermission {
-    fn code(&self) -> &'static str { "DJ030" }
+    fn code(&self) -> &'static str {
+        "DJ030"
+    }
 
-    fn level(&self) -> thorn_api::Level { thorn_api::Level::Fix }
+    fn level(&self) -> thorn_api::Level {
+        thorn_api::Level::Fix
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
-        let mut v = DRFPermissionVisitor { diags: vec![], filename: ctx.filename, in_drf_view: false };
+        let mut v = DRFPermissionVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+            in_drf_view: false,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -1775,12 +1919,20 @@ impl<'a> Visitor<'_> for DRFPermissionVisitor<'a> {
 pub struct DRFEmptyAuthClasses;
 
 impl AstCheck for DRFEmptyAuthClasses {
-    fn code(&self) -> &'static str { "DJ031" }
+    fn code(&self) -> &'static str {
+        "DJ031"
+    }
 
-    fn level(&self) -> thorn_api::Level { thorn_api::Level::Fix }
+    fn level(&self) -> thorn_api::Level {
+        thorn_api::Level::Fix
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
-        let mut v = DRFEmptyAuthVisitor { diags: vec![], filename: ctx.filename, in_drf_view: false };
+        let mut v = DRFEmptyAuthVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+            in_drf_view: false,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -1841,13 +1993,19 @@ impl<'a> Visitor<'_> for DRFEmptyAuthVisitor<'a> {
 pub struct DjangoValidationErrorInDRF;
 
 impl AstCheck for DjangoValidationErrorInDRF {
-    fn code(&self) -> &'static str { "DJ032" }
+    fn code(&self) -> &'static str {
+        "DJ032"
+    }
 
-    fn level(&self) -> thorn_api::Level { thorn_api::Level::Fix }
+    fn level(&self) -> thorn_api::Level {
+        thorn_api::Level::Fix
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
         // Skip migration files
-        if ctx.filename.contains("/migrations/") { return vec![]; }
+        if ctx.filename.contains("/migrations/") {
+            return vec![];
+        }
         let mut has_django_validation_error = false;
         let mut has_rest_framework = false;
         let mut error_range = None;
@@ -1856,7 +2014,10 @@ impl AstCheck for DjangoValidationErrorInDRF {
             if let Stmt::ImportFrom(imp) = stmt {
                 let module = imp.module.as_ref().map(|m| m.as_str()).unwrap_or("");
                 if module == "django.core.exceptions" {
-                    let imports_ve = imp.names.iter().any(|alias| alias.name.as_str() == "ValidationError");
+                    let imports_ve = imp
+                        .names
+                        .iter()
+                        .any(|alias| alias.name.as_str() == "ValidationError");
                     if imports_ve {
                         has_django_validation_error = true;
                         error_range = Some(imp.range());
@@ -1890,7 +2051,9 @@ impl AstCheck for DjangoValidationErrorInDRF {
 pub struct DRFNoPaginationClass;
 
 impl AstCheck for DRFNoPaginationClass {
-    fn code(&self) -> &'static str { "DJ033" }
+    fn code(&self) -> &'static str {
+        "DJ033"
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
         let mut diags = Vec::new();
@@ -1936,7 +2099,8 @@ impl AstCheck for DRFNoPaginationClass {
                         diags.push(
                             Diagnostic::new(
                                 "DJ033",
-                                "List view without pagination_class returns ALL objects.".to_string(),
+                                "List view without pagination_class returns ALL objects."
+                                    .to_string(),
                                 ctx.filename,
                             )
                             .with_range(cls.range()),
@@ -1952,7 +2116,9 @@ impl AstCheck for DRFNoPaginationClass {
 
 fn is_list_view_class(cls: &StmtClassDef) -> bool {
     let list_view_bases = &[
-        "ModelViewSet", "ListAPIView", "ListModelMixin",
+        "ModelViewSet",
+        "ListAPIView",
+        "ListModelMixin",
         "ReadOnlyModelViewSet",
     ];
     cls.arguments.as_ref().is_some_and(|args| {
@@ -1972,7 +2138,9 @@ fn is_list_view_class(cls: &StmtClassDef) -> bool {
 pub struct ModelUnicodeNotCallable;
 
 impl AstCheck for ModelUnicodeNotCallable {
-    fn code(&self) -> &'static str { "E5101" }
+    fn code(&self) -> &'static str {
+        "E5101"
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
         let mut v = ModelUnicodeNotCallableVisitor {
@@ -2046,7 +2214,9 @@ impl<'a> Visitor<'_> for ModelUnicodeNotCallableVisitor<'a> {
 pub struct ModelHasUnicode;
 
 impl AstCheck for ModelHasUnicode {
-    fn code(&self) -> &'static str { "W5102" }
+    fn code(&self) -> &'static str {
+        "W5102"
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
         let mut v = ModelHasUnicodeVisitor {
@@ -2107,12 +2277,19 @@ impl<'a> Visitor<'_> for ModelHasUnicodeVisitor<'a> {
 pub struct HardCodedAuthUser;
 
 impl AstCheck for HardCodedAuthUser {
-    fn code(&self) -> &'static str { "E5141" }
+    fn code(&self) -> &'static str {
+        "E5141"
+    }
 
-    fn level(&self) -> thorn_api::Level { thorn_api::Level::Fix }
+    fn level(&self) -> thorn_api::Level {
+        thorn_api::Level::Fix
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
-        let mut v = HardCodedAuthUserVisitor { diags: vec![], filename: ctx.filename };
+        let mut v = HardCodedAuthUserVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -2146,9 +2323,13 @@ impl<'a> Visitor<'_> for HardCodedAuthUserVisitor<'a> {
 pub struct ImportedAuthUser;
 
 impl AstCheck for ImportedAuthUser {
-    fn code(&self) -> &'static str { "E5142" }
+    fn code(&self) -> &'static str {
+        "E5142"
+    }
 
-    fn level(&self) -> thorn_api::Level { thorn_api::Level::Fix }
+    fn level(&self) -> thorn_api::Level {
+        thorn_api::Level::Fix
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
         let mut diags = Vec::new();
@@ -2179,10 +2360,15 @@ impl AstCheck for ImportedAuthUser {
 pub struct HttpResponseWithJsonDumps;
 
 impl AstCheck for HttpResponseWithJsonDumps {
-    fn code(&self) -> &'static str { "R5101" }
+    fn code(&self) -> &'static str {
+        "R5101"
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
-        let mut v = HttpResponseJsonDumpsVisitor { diags: vec![], filename: ctx.filename };
+        let mut v = HttpResponseJsonDumpsVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -2220,10 +2406,15 @@ impl<'a> Visitor<'_> for HttpResponseJsonDumpsVisitor<'a> {
 pub struct HttpResponseWithContentTypeJson;
 
 impl AstCheck for HttpResponseWithContentTypeJson {
-    fn code(&self) -> &'static str { "R5102" }
+    fn code(&self) -> &'static str {
+        "R5102"
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
-        let mut v = HttpResponseContentTypeJsonVisitor { diags: vec![], filename: ctx.filename };
+        let mut v = HttpResponseContentTypeJsonVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -2239,7 +2430,9 @@ impl<'a> Visitor<'_> for HttpResponseContentTypeJsonVisitor<'a> {
         if let Expr::Call(call) = expr {
             if is_http_response(call.func.as_ref()) {
                 let has_json_content_type = call.arguments.keywords.iter().any(|kw| {
-                    kw.arg.as_ref().is_some_and(|a| a.as_str() == "content_type")
+                    kw.arg
+                        .as_ref()
+                        .is_some_and(|a| a.as_str() == "content_type")
                         && is_application_json_string(&kw.value)
                 });
                 if has_json_content_type {
@@ -2263,10 +2456,15 @@ impl<'a> Visitor<'_> for HttpResponseContentTypeJsonVisitor<'a> {
 pub struct RedundantContentTypeForJsonResponse;
 
 impl AstCheck for RedundantContentTypeForJsonResponse {
-    fn code(&self) -> &'static str { "R5103" }
+    fn code(&self) -> &'static str {
+        "R5103"
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
-        let mut v = RedundantContentTypeJsonVisitor { diags: vec![], filename: ctx.filename };
+        let mut v = RedundantContentTypeJsonVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -2282,7 +2480,9 @@ impl<'a> Visitor<'_> for RedundantContentTypeJsonVisitor<'a> {
         if let Expr::Call(call) = expr {
             if is_json_response(call.func.as_ref()) {
                 let has_content_type = call.arguments.keywords.iter().any(|kw| {
-                    kw.arg.as_ref().is_some_and(|a| a.as_str() == "content_type")
+                    kw.arg
+                        .as_ref()
+                        .is_some_and(|a| a.as_str() == "content_type")
                 });
                 if has_content_type {
                     self.diags.push(
@@ -2305,14 +2505,19 @@ impl<'a> Visitor<'_> for RedundantContentTypeJsonVisitor<'a> {
 pub struct MissingBackwardsMigrationCallable;
 
 impl AstCheck for MissingBackwardsMigrationCallable {
-    fn code(&self) -> &'static str { "W5197" }
+    fn code(&self) -> &'static str {
+        "W5197"
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
         // Only run on migration files
         if !ctx.filename.contains("/migrations/") && !ctx.filename.contains("\\migrations\\") {
             return vec![];
         }
-        let mut v = RunPythonVisitor { diags: vec![], filename: ctx.filename };
+        let mut v = RunPythonVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -2334,7 +2539,9 @@ impl<'a> Visitor<'_> for RunPythonVisitor<'a> {
             if is_run_python {
                 let positional_only = call.arguments.args.len() == 1;
                 let has_reverse = call.arguments.keywords.iter().any(|kw| {
-                    kw.arg.as_ref().is_some_and(|a| a.as_str() == "reverse_code")
+                    kw.arg
+                        .as_ref()
+                        .is_some_and(|a| a.as_str() == "reverse_code")
                 });
                 if positional_only && !has_reverse {
                     self.diags.push(
@@ -2357,13 +2564,18 @@ impl<'a> Visitor<'_> for RunPythonVisitor<'a> {
 pub struct NewDbFieldWithDefault;
 
 impl AstCheck for NewDbFieldWithDefault {
-    fn code(&self) -> &'static str { "W5198" }
+    fn code(&self) -> &'static str {
+        "W5198"
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
         if !ctx.filename.contains("/migrations/") && !ctx.filename.contains("\\migrations\\") {
             return vec![];
         }
-        let mut v = AddFieldDefaultVisitor { diags: vec![], filename: ctx.filename };
+        let mut v = AddFieldDefaultVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -2412,14 +2624,24 @@ impl<'a> Visitor<'_> for AddFieldDefaultVisitor<'a> {
 
 // ── DJ034: TooManyArguments ───────────────────────────────────────────────
 
-pub struct TooManyArguments { pub max_args: u32 }
+pub struct TooManyArguments {
+    pub max_args: u32,
+}
 
 impl AstCheck for TooManyArguments {
-    fn code(&self) -> &'static str { "DJ034" }
-    fn level(&self) -> thorn_api::Level { thorn_api::Level::All }
+    fn code(&self) -> &'static str {
+        "DJ034"
+    }
+    fn level(&self) -> thorn_api::Level {
+        thorn_api::Level::All
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
-        let mut v = TooManyArgumentsVisitor { diags: vec![], filename: ctx.filename, max_args: self.max_args };
+        let mut v = TooManyArgumentsVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+            max_args: self.max_args,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -2437,7 +2659,10 @@ impl<'a> Visitor<'_> for TooManyArgumentsVisitor<'a> {
             let name = f.name.as_str();
             // Skip constructors — they often legitimately need many args
             if name != "__init__" {
-                let param_count = f.parameters.args.iter()
+                let param_count = f
+                    .parameters
+                    .args
+                    .iter()
                     .filter(|p| {
                         let pname = p.parameter.name.as_str();
                         pname != "self" && pname != "cls"
@@ -2461,14 +2686,24 @@ impl<'a> Visitor<'_> for TooManyArgumentsVisitor<'a> {
 
 // ── DJ035: TooManyReturnStatements ────────────────────────────────────────
 
-pub struct TooManyReturnStatements { pub max_returns: u32 }
+pub struct TooManyReturnStatements {
+    pub max_returns: u32,
+}
 
 impl AstCheck for TooManyReturnStatements {
-    fn code(&self) -> &'static str { "DJ035" }
-    fn level(&self) -> thorn_api::Level { thorn_api::Level::All }
+    fn code(&self) -> &'static str {
+        "DJ035"
+    }
+    fn level(&self) -> thorn_api::Level {
+        thorn_api::Level::All
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
-        let mut v = TooManyReturnsVisitor { diags: vec![], filename: ctx.filename, max_returns: self.max_returns };
+        let mut v = TooManyReturnsVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+            max_returns: self.max_returns,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -2513,17 +2748,23 @@ fn count_returns_in_stmt(stmt: &Stmt) -> usize {
         Stmt::Return(_) => 1,
         Stmt::If(s) => {
             count_returns_in_body(&s.body)
-                + s.elif_else_clauses.iter().map(|c| count_returns_in_body(&c.body)).sum::<usize>()
+                + s.elif_else_clauses
+                    .iter()
+                    .map(|c| count_returns_in_body(&c.body))
+                    .sum::<usize>()
         }
         Stmt::For(s) => count_returns_in_body(&s.body) + count_returns_in_body(&s.orelse),
         Stmt::While(s) => count_returns_in_body(&s.body) + count_returns_in_body(&s.orelse),
         Stmt::With(s) => count_returns_in_body(&s.body),
         Stmt::Try(s) => {
             count_returns_in_body(&s.body)
-                + s.handlers.iter().map(|h| {
-                    let ExceptHandler::ExceptHandler(eh) = h;
-                    count_returns_in_body(&eh.body)
-                }).sum::<usize>()
+                + s.handlers
+                    .iter()
+                    .map(|h| {
+                        let ExceptHandler::ExceptHandler(eh) = h;
+                        count_returns_in_body(&eh.body)
+                    })
+                    .sum::<usize>()
                 + count_returns_in_body(&s.orelse)
                 + count_returns_in_body(&s.finalbody)
         }
@@ -2535,18 +2776,28 @@ fn count_returns_in_stmt(stmt: &Stmt) -> usize {
 
 // ── DJ036: TooManyBranches ────────────────────────────────────────────────
 
-pub struct TooManyBranches { pub max_branches: u32 }
+pub struct TooManyBranches {
+    pub max_branches: u32,
+}
 
 impl AstCheck for TooManyBranches {
-    fn code(&self) -> &'static str { "DJ036" }
-    fn level(&self) -> thorn_api::Level { thorn_api::Level::All }
+    fn code(&self) -> &'static str {
+        "DJ036"
+    }
+    fn level(&self) -> thorn_api::Level {
+        thorn_api::Level::All
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
         // Test functions are legitimately long; skip them to avoid noise
         if ctx.filename.contains("/tests/") {
             return vec![];
         }
-        let mut v = TooManyBranchesVisitor { diags: vec![], filename: ctx.filename, max_branches: self.max_branches };
+        let mut v = TooManyBranchesVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+            max_branches: self.max_branches,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -2589,7 +2840,10 @@ fn count_branches_in_stmt(stmt: &Stmt) -> usize {
             let elif_else_count = s.elif_else_clauses.len();
             1 + elif_else_count
                 + count_branches_in_body(&s.body)
-                + s.elif_else_clauses.iter().map(|c| count_branches_in_body(&c.body)).sum::<usize>()
+                + s.elif_else_clauses
+                    .iter()
+                    .map(|c| count_branches_in_body(&c.body))
+                    .sum::<usize>()
         }
         Stmt::For(s) => 1 + count_branches_in_body(&s.body) + count_branches_in_body(&s.orelse),
         Stmt::While(s) => 1 + count_branches_in_body(&s.body) + count_branches_in_body(&s.orelse),
@@ -2597,10 +2851,13 @@ fn count_branches_in_stmt(stmt: &Stmt) -> usize {
             let handler_count = s.handlers.len();
             1 + handler_count
                 + count_branches_in_body(&s.body)
-                + s.handlers.iter().map(|h| {
-                    let ExceptHandler::ExceptHandler(eh) = h;
-                    count_branches_in_body(&eh.body)
-                }).sum::<usize>()
+                + s.handlers
+                    .iter()
+                    .map(|h| {
+                        let ExceptHandler::ExceptHandler(eh) = h;
+                        count_branches_in_body(&eh.body)
+                    })
+                    .sum::<usize>()
                 + count_branches_in_body(&s.orelse)
                 + count_branches_in_body(&s.finalbody)
         }
@@ -2613,18 +2870,28 @@ fn count_branches_in_stmt(stmt: &Stmt) -> usize {
 
 // ── DJ037: TooManyLocalVariables ──────────────────────────────────────────
 
-pub struct TooManyLocalVariables { pub max_locals: u32 }
+pub struct TooManyLocalVariables {
+    pub max_locals: u32,
+}
 
 impl AstCheck for TooManyLocalVariables {
-    fn code(&self) -> &'static str { "DJ037" }
-    fn level(&self) -> thorn_api::Level { thorn_api::Level::All }
+    fn code(&self) -> &'static str {
+        "DJ037"
+    }
+    fn level(&self) -> thorn_api::Level {
+        thorn_api::Level::All
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
         // Test functions are legitimately long; skip them to avoid noise
         if ctx.filename.contains("/tests/") {
             return vec![];
         }
-        let mut v = TooManyLocalsVisitor { diags: vec![], filename: ctx.filename, max_locals: self.max_locals };
+        let mut v = TooManyLocalsVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+            max_locals: self.max_locals,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -2746,18 +3013,28 @@ fn collect_name_targets(expr: &Expr, locals: &mut std::collections::HashSet<Stri
 
 // ── DJ038: TooManyStatements ──────────────────────────────────────────────
 
-pub struct TooManyStatements { pub max_statements: u32 }
+pub struct TooManyStatements {
+    pub max_statements: u32,
+}
 
 impl AstCheck for TooManyStatements {
-    fn code(&self) -> &'static str { "DJ038" }
-    fn level(&self) -> thorn_api::Level { thorn_api::Level::All }
+    fn code(&self) -> &'static str {
+        "DJ038"
+    }
+    fn level(&self) -> thorn_api::Level {
+        thorn_api::Level::All
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
         // Test functions are legitimately long; skip them to avoid noise
         if ctx.filename.contains("/tests/") {
             return vec![];
         }
-        let mut v = TooManyStatementsVisitor { diags: vec![], filename: ctx.filename, max_statements: self.max_statements };
+        let mut v = TooManyStatementsVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+            max_statements: self.max_statements,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -2797,17 +3074,25 @@ fn count_statements_in_stmt(stmt: &Stmt) -> usize {
     match stmt {
         Stmt::If(s) => {
             1 + count_statements_in_body(&s.body)
-                + s.elif_else_clauses.iter().map(|c| count_statements_in_body(&c.body)).sum::<usize>()
+                + s.elif_else_clauses
+                    .iter()
+                    .map(|c| count_statements_in_body(&c.body))
+                    .sum::<usize>()
         }
         Stmt::For(s) => 1 + count_statements_in_body(&s.body) + count_statements_in_body(&s.orelse),
-        Stmt::While(s) => 1 + count_statements_in_body(&s.body) + count_statements_in_body(&s.orelse),
+        Stmt::While(s) => {
+            1 + count_statements_in_body(&s.body) + count_statements_in_body(&s.orelse)
+        }
         Stmt::With(s) => 1 + count_statements_in_body(&s.body),
         Stmt::Try(s) => {
             1 + count_statements_in_body(&s.body)
-                + s.handlers.iter().map(|h| {
-                    let ExceptHandler::ExceptHandler(eh) = h;
-                    count_statements_in_body(&eh.body)
-                }).sum::<usize>()
+                + s.handlers
+                    .iter()
+                    .map(|h| {
+                        let ExceptHandler::ExceptHandler(eh) = h;
+                        count_statements_in_body(&eh.body)
+                    })
+                    .sum::<usize>()
                 + count_statements_in_body(&s.orelse)
                 + count_statements_in_body(&s.finalbody)
         }
@@ -2819,18 +3104,28 @@ fn count_statements_in_stmt(stmt: &Stmt) -> usize {
 
 // ── DJ039: ModelTooManyFields ─────────────────────────────────────────────
 
-pub struct ModelTooManyFields { pub max_fields: u32 }
+pub struct ModelTooManyFields {
+    pub max_fields: u32,
+}
 
 impl AstCheck for ModelTooManyFields {
-    fn code(&self) -> &'static str { "DJ039" }
-    fn level(&self) -> thorn_api::Level { thorn_api::Level::All }
+    fn code(&self) -> &'static str {
+        "DJ039"
+    }
+    fn level(&self) -> thorn_api::Level {
+        thorn_api::Level::All
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
         let mut diags = Vec::new();
         for stmt in &ctx.module.body {
             if let Stmt::ClassDef(cls) = stmt {
                 if is_django_model(cls) {
-                    let field_count = cls.body.iter().filter(|s| is_model_field_assignment(s)).count();
+                    let field_count = cls
+                        .body
+                        .iter()
+                        .filter(|s| is_model_field_assignment(s))
+                        .count();
                     if field_count > self.max_fields as usize {
                         let name = cls.name.as_str();
                         diags.push(
@@ -2850,18 +3145,39 @@ impl AstCheck for ModelTooManyFields {
 }
 
 const DJANGO_FIELD_NAMES: &[&str] = &[
-    "AutoField", "BigAutoField", "SmallAutoField",
-    "BooleanField", "NullBooleanField",
-    "CharField", "TextField", "EmailField", "URLField", "SlugField",
-    "FilePathField", "FileField", "ImageField",
-    "IntegerField", "BigIntegerField", "SmallIntegerField", "PositiveIntegerField",
-    "PositiveSmallIntegerField", "PositiveBigIntegerField",
-    "FloatField", "DecimalField",
-    "DateField", "DateTimeField", "TimeField", "DurationField",
-    "BinaryField", "UUIDField",
-    "GenericIPAddressField", "IPAddressField",
+    "AutoField",
+    "BigAutoField",
+    "SmallAutoField",
+    "BooleanField",
+    "NullBooleanField",
+    "CharField",
+    "TextField",
+    "EmailField",
+    "URLField",
+    "SlugField",
+    "FilePathField",
+    "FileField",
+    "ImageField",
+    "IntegerField",
+    "BigIntegerField",
+    "SmallIntegerField",
+    "PositiveIntegerField",
+    "PositiveSmallIntegerField",
+    "PositiveBigIntegerField",
+    "FloatField",
+    "DecimalField",
+    "DateField",
+    "DateTimeField",
+    "TimeField",
+    "DurationField",
+    "BinaryField",
+    "UUIDField",
+    "GenericIPAddressField",
+    "IPAddressField",
     "JSONField",
-    "ForeignKey", "OneToOneField", "ManyToManyField",
+    "ForeignKey",
+    "OneToOneField",
+    "ManyToManyField",
 ];
 
 fn is_model_field_assignment(stmt: &Stmt) -> bool {
@@ -2882,18 +3198,28 @@ fn is_model_field_assignment(stmt: &Stmt) -> bool {
 
 // ── DJ040: TooManyMethods ─────────────────────────────────────────────────
 
-pub struct TooManyMethods { pub max_methods: u32 }
+pub struct TooManyMethods {
+    pub max_methods: u32,
+}
 
 impl AstCheck for TooManyMethods {
-    fn code(&self) -> &'static str { "DJ040" }
-    fn level(&self) -> thorn_api::Level { thorn_api::Level::All }
+    fn code(&self) -> &'static str {
+        "DJ040"
+    }
+    fn level(&self) -> thorn_api::Level {
+        thorn_api::Level::All
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
         let mut diags = Vec::new();
         for stmt in &ctx.module.body {
             if let Stmt::ClassDef(cls) = stmt {
                 if is_drf_view(cls) || is_serializer_class(cls) {
-                    let method_count = cls.body.iter().filter(|s| matches!(s, Stmt::FunctionDef(_))).count();
+                    let method_count = cls
+                        .body
+                        .iter()
+                        .filter(|s| matches!(s, Stmt::FunctionDef(_)))
+                        .count();
                     if method_count > self.max_methods as usize {
                         let name = cls.name.as_str();
                         diags.push(
@@ -2914,18 +3240,29 @@ impl AstCheck for TooManyMethods {
 
 // ── DJ041: DeeplyNestedCode ───────────────────────────────────────────────
 
-pub struct DeeplyNestedCode { pub max_depth: u32 }
+pub struct DeeplyNestedCode {
+    pub max_depth: u32,
+}
 
 impl AstCheck for DeeplyNestedCode {
-    fn code(&self) -> &'static str { "DJ041" }
-    fn level(&self) -> thorn_api::Level { thorn_api::Level::All }
+    fn code(&self) -> &'static str {
+        "DJ041"
+    }
+    fn level(&self) -> thorn_api::Level {
+        thorn_api::Level::All
+    }
 
     fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
         // Test functions are legitimately deeply nested (subTest blocks, multi-scenario tests)
         if ctx.filename.contains("/tests/") {
             return vec![];
         }
-        let mut v = DeeplyNestedVisitor { diags: vec![], filename: ctx.filename, depth: 0, max_depth: self.max_depth };
+        let mut v = DeeplyNestedVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+            depth: 0,
+            max_depth: self.max_depth,
+        };
         v.visit_body(&ctx.module.body);
         v.diags
     }
@@ -3196,10 +3533,20 @@ fn is_serializer_class(class: &StmtClassDef) -> bool {
 
 fn is_drf_view(class: &StmtClassDef) -> bool {
     const DRF_VIEW_BASES: &[&str] = &[
-        "APIView", "ViewSet", "ModelViewSet", "ReadOnlyModelViewSet",
-        "GenericViewSet", "GenericAPIView", "ListAPIView", "CreateAPIView",
-        "RetrieveAPIView", "DestroyAPIView", "UpdateAPIView",
-        "ListCreateAPIView", "RetrieveUpdateAPIView", "RetrieveDestroyAPIView",
+        "APIView",
+        "ViewSet",
+        "ModelViewSet",
+        "ReadOnlyModelViewSet",
+        "GenericViewSet",
+        "GenericAPIView",
+        "ListAPIView",
+        "CreateAPIView",
+        "RetrieveAPIView",
+        "DestroyAPIView",
+        "UpdateAPIView",
+        "ListCreateAPIView",
+        "RetrieveUpdateAPIView",
+        "RetrieveDestroyAPIView",
         "RetrieveUpdateDestroyAPIView",
     ];
     class.arguments.as_ref().is_some_and(|args| {
