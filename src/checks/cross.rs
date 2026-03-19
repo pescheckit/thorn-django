@@ -283,8 +283,7 @@ impl<'a, 'g> Visitor<'a> for ReverseAccessorVisitor<'g> {
     fn visit_expr(&mut self, expr: &'a Expr) {
         if let Expr::Attribute(attr) = expr {
             let accessor = attr.attr.as_str();
-            if accessor.ends_with("_set") {
-                let model_name_lower = &accessor[..accessor.len() - 4];
+            if let Some(model_name_lower) = accessor.strip_suffix("_set") {
                 for model in &self.graph.models {
                     for rel in &model.relations {
                         if matches!(rel.kind, thorn_api::RelationKind::ForeignKey | thorn_api::RelationKind::OneToOne)
@@ -370,7 +369,7 @@ fn extract_model_queryset_call(expr: &Expr) -> Option<(String, String)> {
 }
 
 fn is_serializer(class: &StmtClassDef) -> bool {
-    class.arguments.as_ref().map_or(false, |args| {
+    class.arguments.as_ref().is_some_and(|args| {
         args.args.iter().any(|base| match base {
             Expr::Attribute(a) => matches!(a.attr.as_str(), "ModelSerializer" | "Serializer" | "HyperlinkedModelSerializer"),
             Expr::Name(n) => matches!(n.id.as_str(), "ModelSerializer" | "Serializer" | "HyperlinkedModelSerializer"),

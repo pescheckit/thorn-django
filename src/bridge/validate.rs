@@ -329,6 +329,7 @@ fn validate_urls(py: Python<'_>) -> PyResult<Vec<Diagnostic>> {
     Ok(diagnostics)
 }
 
+#[allow(clippy::only_used_in_recursion)]
 fn walk_url_patterns(
     py: Python<'_>,
     resolver: &Bound<'_, PyAny>,

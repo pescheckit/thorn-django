@@ -449,7 +449,7 @@ fn dfs<'a>(
                 // Self-cycles (len == 1) are naturally covered because the
                 // single node would itself be __init__.py.
                 let involves_init = cycle.iter().any(|m| {
-                    graph.get(*m).map_or(false, |info| info.file_path.ends_with("__init__.py"))
+                    graph.get(*m).is_some_and(|info| info.file_path.ends_with("__init__.py"))
                 });
 
                 if !involves_init && !reported.contains(&key) {

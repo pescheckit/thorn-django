@@ -66,6 +66,7 @@ pub struct DuplicateRelatedName;
 impl GraphCheck for DuplicateRelatedName {
     fn code(&self) -> &'static str { "DJ102" }
 
+    #[allow(clippy::type_complexity)]
     fn check(&self, graph: &ModelGraph) -> Vec<Diagnostic> {
         let mut seen: HashMap<(&str, &str, &str), Vec<(&str, &str, &str)>> = HashMap::new();
 
@@ -161,7 +162,7 @@ fn find_class_line(filename: &str, class_name: &str) -> Option<u32> {
     let pattern = format!("class {class_name}");
     for (i, line) in source.lines().enumerate() {
         let trimmed = line.trim_start();
-        if trimmed.starts_with(&pattern) && trimmed[pattern.len()..].starts_with(|c: char| c == '(' || c == ':') {
+        if trimmed.starts_with(&pattern) && trimmed[pattern.len()..].starts_with(['(', ':']) {
             return Some((i + 1) as u32);
         }
     }

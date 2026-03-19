@@ -684,17 +684,17 @@ impl<'a> Visitor<'_> for RawSqlInjectionVisitor<'a> {
                     }
                     // Also check keyword args
                     for kw in &call.arguments.keywords {
-                        if kw.arg.as_ref().is_some_and(|a| a.as_str() == "sql") {
-                            if is_interpolated_string(&kw.value) {
-                                self.diags.push(
-                                    Diagnostic::new(
-                                        "DJ014",
-                                        format!(".{method}() with string interpolation is a SQL injection risk."),
-                                        self.filename,
-                                    )
-                                    .with_range(call.range()),
-                                );
-                            }
+                        if kw.arg.as_ref().is_some_and(|a| a.as_str() == "sql")
+                            && is_interpolated_string(&kw.value)
+                        {
+                            self.diags.push(
+                                Diagnostic::new(
+                                    "DJ014",
+                                    format!(".{method}() with string interpolation is a SQL injection risk."),
+                                    self.filename,
+                                )
+                                .with_range(call.range()),
+                            );
                         }
                     }
                 }
@@ -941,16 +941,16 @@ impl<'a> Visitor<'_> for CountGtZeroVisitor<'a> {
     fn visit_expr(&mut self, expr: &Expr) {
         if let Expr::Compare(cmp) = expr {
             let left_is_count = is_count_call(cmp.left.as_ref());
-            let right_is_count = cmp.comparators.first().map_or(false, is_count_call);
+            let right_is_count = cmp.comparators.first().is_some_and(is_count_call);
 
             let flagged = if left_is_count {
-                cmp.comparators.first().map_or(false, is_zero_literal)
-                    && cmp.ops.first().map_or(false, |op| {
+                cmp.comparators.first().is_some_and(is_zero_literal)
+                    && cmp.ops.first().is_some_and(|op| {
                         matches!(op, CmpOp::Gt | CmpOp::NotEq | CmpOp::Eq)
                     })
             } else if right_is_count {
                 is_zero_literal(cmp.left.as_ref())
-                    && cmp.ops.first().map_or(false, |op| {
+                    && cmp.ops.first().is_some_and(|op| {
                         matches!(op, CmpOp::Lt | CmpOp::NotEq | CmpOp::Eq)
                     })
             } else {
@@ -995,17 +995,17 @@ impl<'a> Visitor<'_> for SelectRelatedNoArgsVisitor<'a> {
     fn visit_expr(&mut self, expr: &Expr) {
         if let Expr::Call(call) = expr {
             if let Expr::Attribute(attr) = call.func.as_ref() {
-                if attr.attr.as_str() == "select_related" {
-                    if call.arguments.args.is_empty() && call.arguments.keywords.is_empty() {
-                        self.diags.push(
-                            Diagnostic::new(
-                                "DJ020",
-                                "select_related() without arguments follows ALL FK chains. Specify fields explicitly.",
-                                self.filename,
-                            )
-                            .with_range(call.range()),
-                        );
-                    }
+                if attr.attr.as_str() == "select_related"
+                    && call.arguments.args.is_empty() && call.arguments.keywords.is_empty()
+                {
+                    self.diags.push(
+                        Diagnostic::new(
+                            "DJ020",
+                            "select_related() without arguments follows ALL FK chains. Specify fields explicitly.",
+                            self.filename,
+                        )
+                        .with_range(call.range()),
+                    );
                 }
             }
         }
@@ -1094,7 +1094,7 @@ impl<'a> Visitor<'_> for FloatFieldForMoneyVisitor<'a> {
                     let is_money = self
                         .current_assign_target
                         .as_deref()
-                        .map_or(false, target_name_is_money);
+                        .is_some_and(target_name_is_money);
                     if is_money {
                         self.diags.push(
                             Diagnostic::new(
@@ -1936,7 +1936,7 @@ impl AstCheck for DRFNoPaginationClass {
                         diags.push(
                             Diagnostic::new(
                                 "DJ033",
-                                format!("List view without pagination_class returns ALL objects."),
+                                "List view without pagination_class returns ALL objects.".to_string(),
                                 ctx.filename,
                             )
                             .with_range(cls.range()),
@@ -1955,14 +1955,14 @@ fn is_list_view_class(cls: &StmtClassDef) -> bool {
         "ModelViewSet", "ListAPIView", "ListModelMixin",
         "ReadOnlyModelViewSet",
     ];
-    cls.arguments.as_ref().map_or(false, |args| {
+    cls.arguments.as_ref().is_some_and(|args| {
         args.args.iter().any(|base| {
             let name = match base {
                 Expr::Name(n) => Some(n.id.as_str()),
                 Expr::Attribute(a) => Some(a.attr.as_str()),
                 _ => None,
             };
-            name.map_or(false, |n| list_view_bases.contains(&n))
+            name.is_some_and(|n| list_view_bases.contains(&n))
         })
     })
 }
@@ -3057,7 +3057,7 @@ fn has_abstract_meta(class: &StmtClassDef) -> bool {
 }
 
 fn is_django_model(class: &StmtClassDef) -> bool {
-    class.arguments.as_ref().map_or(false, |args| {
+    class.arguments.as_ref().is_some_and(|args| {
         args.args.iter().any(|base| match base {
             Expr::Attribute(a) => a.attr.as_str() == "Model",
             Expr::Name(n) => n.id.as_str() == "Model",
@@ -3067,7 +3067,7 @@ fn is_django_model(class: &StmtClassDef) -> bool {
 }
 
 fn is_model_form(class: &StmtClassDef) -> bool {
-    class.arguments.as_ref().map_or(false, |args| {
+    class.arguments.as_ref().is_some_and(|args| {
         args.args.iter().any(|base| match base {
             Expr::Name(n) => n.id.as_str() == "ModelForm",
             Expr::Attribute(a) => a.attr.as_str() == "ModelForm",
@@ -3179,7 +3179,7 @@ fn is_queryset_call(expr: &Expr) -> bool {
 }
 
 fn is_serializer_class(class: &StmtClassDef) -> bool {
-    class.arguments.as_ref().map_or(false, |args| {
+    class.arguments.as_ref().is_some_and(|args| {
         args.args.iter().any(|base| {
             let name = match base {
                 Expr::Name(n) => Some(n.id.as_str()),
@@ -3202,14 +3202,14 @@ fn is_drf_view(class: &StmtClassDef) -> bool {
         "ListCreateAPIView", "RetrieveUpdateAPIView", "RetrieveDestroyAPIView",
         "RetrieveUpdateDestroyAPIView",
     ];
-    class.arguments.as_ref().map_or(false, |args| {
+    class.arguments.as_ref().is_some_and(|args| {
         args.args.iter().any(|base| {
             let name = match base {
                 Expr::Name(n) => Some(n.id.as_str()),
                 Expr::Attribute(a) => Some(a.attr.as_str()),
                 _ => None,
             };
-            name.map_or(false, |n| DRF_VIEW_BASES.contains(&n))
+            name.is_some_and(|n| DRF_VIEW_BASES.contains(&n))
         })
     })
 }

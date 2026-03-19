@@ -269,14 +269,11 @@ fn extract_methods(py: Python<'_>, model_cls: &Bound<'_, PyAny>) -> PyResult<Vec
         if cls_name == "Model" || cls_name == "object" { break; }
         if let Ok(dict) = cls.getattr("__dict__") {
             if let Ok(items) = dict.call_method0("items") {
-                for item in items.try_iter()? {
-                    if let Ok(item) = item {
-                        if let Ok((key, val)) = item.extract::<(String, pyo3::Bound<'_, pyo3::PyAny>)>() {
-                            if !key.starts_with('_') && val.is_instance(&property_type).unwrap_or(false) {
-                                if !methods.contains(&key) {
-                                    methods.push(key);
-                                }
-                            }
+                for item in (items.try_iter()?).flatten() {
+                    if let Ok((key, val)) = item.extract::<(String, pyo3::Bound<'_, pyo3::PyAny>)>() {
+                        if !key.starts_with('_') && val.is_instance(&property_type).unwrap_or(false)
+                            && !methods.contains(&key) {
+                            methods.push(key);
                         }
                     }
                 }
