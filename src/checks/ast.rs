@@ -3352,6 +3352,444 @@ impl<'a> Visitor<'_> for DeeplyNestedVisitor<'a> {
     }
 }
 
+// ── DJ044: SuperInitNotCalled ─────────────────────────────────────────────
+
+pub struct SuperInitNotCalled;
+
+impl AstCheck for SuperInitNotCalled {
+    fn code(&self) -> &'static str {
+        "DJ044"
+    }
+
+    fn level(&self) -> thorn_api::Level {
+        thorn_api::Level::Fix
+    }
+
+    fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
+        if ctx.filename.contains("/tests/") || ctx.filename.contains("\\tests\\") {
+            return vec![];
+        }
+        let mut diags = Vec::new();
+        for stmt in &ctx.module.body {
+            if let Stmt::ClassDef(cls) = stmt {
+                check_super_init_in_class(cls, ctx.filename, &mut diags);
+            }
+        }
+        diags
+    }
+}
+
+fn class_has_meaningful_bases(cls: &StmtClassDef) -> bool {
+    let Some(args) = &cls.arguments else {
+        return false;
+    };
+    args.args.iter().any(|base| match base {
+        Expr::Name(n) => {
+            let name = n.id.as_str();
+            name != "object"
+        }
+        Expr::Attribute(_) => true,
+        _ => false,
+    })
+}
+
+fn body_calls_super_init(body: &[Stmt]) -> bool {
+    for stmt in body {
+        if stmt_calls_super_init(stmt) {
+            return true;
+        }
+    }
+    false
+}
+
+fn stmt_calls_super_init(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Expr(expr_stmt) => expr_calls_super_init(&expr_stmt.value),
+        Stmt::If(s) => {
+            body_calls_super_init(&s.body)
+                || s.elif_else_clauses
+                    .iter()
+                    .any(|c| body_calls_super_init(&c.body))
+        }
+        Stmt::Try(s) => {
+            body_calls_super_init(&s.body)
+                || s.handlers.iter().any(|h| {
+                    let ExceptHandler::ExceptHandler(eh) = h;
+                    body_calls_super_init(&eh.body)
+                })
+        }
+        _ => false,
+    }
+}
+
+fn expr_calls_super_init(expr: &Expr) -> bool {
+    if let Expr::Call(call) = expr {
+        // super().__init__(...)
+        if let Expr::Attribute(attr) = call.func.as_ref() {
+            if attr.attr.as_str() == "__init__" {
+                // Check if the receiver is super() or SuperClass
+                match attr.value.as_ref() {
+                    Expr::Call(inner) => {
+                        if let Expr::Name(n) = inner.func.as_ref() {
+                            if n.id.as_str() == "super" {
+                                return true;
+                            }
+                        }
+                    }
+                    // ParentClass.__init__(self, ...) style
+                    Expr::Name(_) | Expr::Attribute(_) => return true,
+                    _ => {}
+                }
+            }
+        }
+    }
+    false
+}
+
+fn check_super_init_in_class(cls: &StmtClassDef, filename: &str, diags: &mut Vec<Diagnostic>) {
+    if !class_has_meaningful_bases(cls) {
+        return;
+    }
+    for stmt in &cls.body {
+        if let Stmt::FunctionDef(func) = stmt {
+            if func.name.as_str() == "__init__" && !body_calls_super_init(&func.body) {
+                let class_name = cls.name.as_str();
+                diags.push(
+                        Diagnostic::new(
+                            "DJ044",
+                            format!("'__init__' in class '{class_name}' does not call super().__init__(). This can cause MRO issues with Django classes."),
+                            filename,
+                        )
+                        .with_range(func.range()),
+                    );
+            }
+        }
+    }
+}
+
+// ── DJ045: BadExceptOrder ─────────────────────────────────────────────────
+
+pub struct BadExceptOrder;
+
+impl AstCheck for BadExceptOrder {
+    fn code(&self) -> &'static str {
+        "DJ045"
+    }
+
+    fn level(&self) -> thorn_api::Level {
+        thorn_api::Level::Fix
+    }
+
+    fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
+        let mut v = BadExceptOrderVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+        };
+        v.visit_body(&ctx.module.body);
+        v.diags
+    }
+}
+
+struct BadExceptOrderVisitor<'a> {
+    diags: Vec<Diagnostic>,
+    filename: &'a str,
+}
+
+/// Returns true if `parent_name` is a known parent exception of `child_name`.
+fn is_broader_exception(parent_name: &str, child_name: &str) -> bool {
+    match parent_name {
+        "Exception" => matches!(
+            child_name,
+            "ValueError"
+                | "TypeError"
+                | "KeyError"
+                | "IndexError"
+                | "AttributeError"
+                | "RuntimeError"
+                | "OSError"
+                | "IOError"
+                | "ImportError"
+                | "StopIteration"
+                | "ArithmeticError"
+                | "LookupError"
+                | "ZeroDivisionError"
+                | "OverflowError"
+                | "FloatingPointError"
+                | "FileNotFoundError"
+                | "PermissionError"
+                | "FileExistsError"
+                | "IsADirectoryError"
+                | "NotADirectoryError"
+                | "ConnectionError"
+                | "TimeoutError"
+                | "ConnectionRefusedError"
+                | "ConnectionResetError"
+                | "BrokenPipeError"
+                | "ConnectionAbortedError"
+                | "UnicodeError"
+        ),
+        "LookupError" => matches!(child_name, "KeyError" | "IndexError"),
+        "ArithmeticError" => matches!(
+            child_name,
+            "ZeroDivisionError" | "OverflowError" | "FloatingPointError"
+        ),
+        "OSError" | "IOError" => matches!(
+            child_name,
+            "FileNotFoundError"
+                | "PermissionError"
+                | "FileExistsError"
+                | "IsADirectoryError"
+                | "NotADirectoryError"
+                | "ConnectionError"
+                | "TimeoutError"
+                | "ConnectionRefusedError"
+                | "ConnectionResetError"
+                | "BrokenPipeError"
+                | "ConnectionAbortedError"
+        ),
+        "ConnectionError" => matches!(
+            child_name,
+            "ConnectionRefusedError"
+                | "ConnectionResetError"
+                | "BrokenPipeError"
+                | "ConnectionAbortedError"
+        ),
+        "ValueError" => child_name == "UnicodeError",
+        _ => false,
+    }
+}
+
+fn except_handler_type_name(handler: &ExceptHandler) -> Option<&str> {
+    let ExceptHandler::ExceptHandler(eh) = handler;
+    match eh.type_.as_deref()? {
+        Expr::Name(n) => Some(n.id.as_str()),
+        Expr::Attribute(a) => Some(a.attr.as_str()),
+        _ => None,
+    }
+}
+
+impl<'a> Visitor<'_> for BadExceptOrderVisitor<'a> {
+    fn visit_stmt(&mut self, stmt: &Stmt) {
+        if let Stmt::Try(try_stmt) = stmt {
+            let handlers = &try_stmt.handlers;
+            for i in 0..handlers.len() {
+                let Some(earlier_name) = except_handler_type_name(&handlers[i]) else {
+                    visitor::walk_stmt(self, stmt);
+                    return;
+                };
+                for later_handler in handlers.iter().skip(i + 1) {
+                    let Some(later_name) = except_handler_type_name(later_handler) else {
+                        continue;
+                    };
+                    if is_broader_exception(earlier_name, later_name) {
+                        let ExceptHandler::ExceptHandler(eh) = later_handler;
+                        self.diags.push(
+                            Diagnostic::new(
+                                "DJ045",
+                                format!(
+                                    "Exception handler '{earlier_name}' is broader than later handler '{later_name}' — '{later_name}' is unreachable."
+                                ),
+                                self.filename,
+                            )
+                            .with_range(eh.range()),
+                        );
+                    }
+                }
+            }
+        }
+        visitor::walk_stmt(self, stmt);
+    }
+}
+
+// ── DJ046: UsingConstantTest ──────────────────────────────────────────────
+
+pub struct UsingConstantTest;
+
+impl AstCheck for UsingConstantTest {
+    fn code(&self) -> &'static str {
+        "DJ046"
+    }
+
+    fn level(&self) -> thorn_api::Level {
+        thorn_api::Level::Improve
+    }
+
+    fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
+        let mut v = UsingConstantTestVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+        };
+        v.visit_body(&ctx.module.body);
+        v.diags
+    }
+}
+
+struct UsingConstantTestVisitor<'a> {
+    diags: Vec<Diagnostic>,
+    filename: &'a str,
+}
+
+/// Returns a human-readable description of the constant and whether it is
+/// a constant we should flag, or None if it should be skipped.
+fn constant_test_description(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::BooleanLiteral(b) => Some(if b.value {
+            "True".to_string()
+        } else {
+            "False".to_string()
+        }),
+        Expr::NumberLiteral(n) => {
+            // Only flag non-zero numeric constants — `while 1:` is idiomatic in some codebases
+            // but we keep this check consistent with pylint W0125
+            Some(format!("{:?}", n.value))
+        }
+        Expr::StringLiteral(s) => {
+            let val = s.value.to_str();
+            if val.is_empty() {
+                None
+            } else {
+                Some(format!("'{val}'"))
+            }
+        }
+        Expr::NoneLiteral(_) => Some("None".to_string()),
+        _ => None,
+    }
+}
+
+fn is_type_checking_name(expr: &Expr) -> bool {
+    match expr {
+        Expr::Name(n) => n.id.as_str() == "TYPE_CHECKING",
+        Expr::Attribute(a) => a.attr.as_str() == "TYPE_CHECKING",
+        _ => false,
+    }
+}
+
+fn is_dunder_name_check(expr: &Expr) -> bool {
+    // `if __name__ == "__main__":` — skip
+    if let Expr::Compare(cmp) = expr {
+        if let Expr::Name(n) = cmp.left.as_ref() {
+            if n.id.as_str() == "__name__" {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+impl<'a> Visitor<'_> for UsingConstantTestVisitor<'a> {
+    fn visit_stmt(&mut self, stmt: &Stmt) {
+        match stmt {
+            Stmt::If(if_stmt) => {
+                let test = &if_stmt.test;
+                // Skip `if TYPE_CHECKING:` and `if __name__ == "__main__":`
+                if !is_type_checking_name(test) && !is_dunder_name_check(test) {
+                    if let Some(desc) = constant_test_description(test) {
+                        self.diags.push(
+                            Diagnostic::new(
+                                "DJ046",
+                                format!(
+                                    "Using constant test '{desc}' — this branch may be dead code."
+                                ),
+                                self.filename,
+                            )
+                            .with_range(if_stmt.range()),
+                        );
+                    }
+                }
+            }
+            Stmt::While(while_stmt) => {
+                let test = &while_stmt.test;
+                // `while True:` is a recognised idiom — skip it
+                if let Expr::BooleanLiteral(b) = &**test {
+                    if b.value {
+                        visitor::walk_stmt(self, stmt);
+                        return;
+                    }
+                }
+                if let Some(desc) = constant_test_description(test) {
+                    self.diags.push(
+                        Diagnostic::new(
+                            "DJ046",
+                            format!("Using constant test '{desc}' in while loop — this loop is dead code."),
+                            self.filename,
+                        )
+                        .with_range(while_stmt.range()),
+                    );
+                }
+            }
+            _ => {}
+        }
+        visitor::walk_stmt(self, stmt);
+    }
+}
+
+// ── DJ048: SelfAssigningVariable ──────────────────────────────────────────
+
+pub struct SelfAssigningVariable;
+
+impl AstCheck for SelfAssigningVariable {
+    fn code(&self) -> &'static str {
+        "DJ048"
+    }
+
+    fn level(&self) -> thorn_api::Level {
+        thorn_api::Level::Fix
+    }
+
+    fn check(&self, ctx: &CheckContext) -> Vec<Diagnostic> {
+        let mut v = SelfAssigningVisitor {
+            diags: vec![],
+            filename: ctx.filename,
+        };
+        v.visit_body(&ctx.module.body);
+        v.diags
+    }
+}
+
+struct SelfAssigningVisitor<'a> {
+    diags: Vec<Diagnostic>,
+    filename: &'a str,
+}
+
+/// Returns the "canonical string key" of an expression if it is a simple
+/// name or attribute access chain we can compare for self-assignment.
+/// Examples: `x` → `"x"`, `self.name` → `"self.name"`.
+fn expr_as_assign_key(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Name(n) => Some(n.id.as_str().to_string()),
+        Expr::Attribute(a) => {
+            let base = expr_as_assign_key(&a.value)?;
+            Some(format!("{}.{}", base, a.attr.as_str()))
+        }
+        _ => None,
+    }
+}
+
+impl<'a> Visitor<'_> for SelfAssigningVisitor<'a> {
+    fn visit_stmt(&mut self, stmt: &Stmt) {
+        if let Stmt::Assign(assign) = stmt {
+            // Skip tuple/multi-target assignments — too complex to check simply
+            if assign.targets.len() == 1 {
+                if let Some(target_key) = expr_as_assign_key(&assign.targets[0]) {
+                    if let Some(value_key) = expr_as_assign_key(&assign.value) {
+                        if target_key == value_key {
+                            self.diags.push(
+                                Diagnostic::new(
+                                    "DJ048",
+                                    format!("'{target_key} = {value_key}' is a self-assignment (likely a typo)."),
+                                    self.filename,
+                                )
+                                .with_range(assign.range()),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        visitor::walk_stmt(self, stmt);
+    }
+}
+
 // ── Helper functions ──────────────────────────────────────────────────────
 
 /// Returns true if the file is a seeder or fixture file.

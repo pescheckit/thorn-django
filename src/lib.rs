@@ -267,6 +267,10 @@ impl Plugin for DjangoPlugin {
             Box::new(checks::ast::RedundantContentTypeForJsonResponse),
             Box::new(checks::ast::MissingBackwardsMigrationCallable),
             Box::new(checks::ast::NewDbFieldWithDefault),
+            Box::new(checks::ast::SuperInitNotCalled),
+            Box::new(checks::ast::BadExceptOrder),
+            Box::new(checks::ast::UsingConstantTest),
+            Box::new(checks::ast::SelfAssigningVariable),
         ];
 
         if !self.has_graph {
