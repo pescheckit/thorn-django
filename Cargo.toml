@@ -6,8 +6,13 @@ license = "MIT"
 description = "Django linting plugin for Thorn — a fast pylint-django alternative in Rust"
 authors = ["Bram"]
 
+[[bin]]
+name = "thorn"
+path = "src/bin/thorn.rs"
+
 [dependencies]
 thorn-api = { git = "https://github.com/pescheckit/thorn" }
+thorn-cli = { git = "https://github.com/pescheckit/thorn" }
 ruff_python_ast = { git = "https://github.com/astral-sh/ruff", tag = "0.11.6" }
 ruff_text_size = { git = "https://github.com/astral-sh/ruff", tag = "0.11.6" }
 ruff_python_parser = { git = "https://github.com/astral-sh/ruff", tag = "0.11.6" }
@@ -21,6 +26,7 @@ colored = "2"
 [dev-dependencies]
 tempfile = "3"
 
-# Use local checkout when available (locally + CI checks out sibling)
+# Use local checkout when available
 [patch."https://github.com/pescheckit/thorn"]
 thorn-api = { path = "../thorn/crates/thorn-api" }
+thorn-cli = { path = "../thorn/crates/thorn-cli" }
