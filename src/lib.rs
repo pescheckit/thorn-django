@@ -103,7 +103,11 @@ impl Plugin for DjangoPlugin {
                                 "{} Dynamic validation found {} issue{}",
                                 "✓".green(),
                                 bundle.diagnostics.len(),
-                                if bundle.diagnostics.len() == 1 { "" } else { "s" }
+                                if bundle.diagnostics.len() == 1 {
+                                    ""
+                                } else {
+                                    "s"
+                                }
                             );
                         }
                         self.check_graph_staleness(project_dir, graph_path);
@@ -225,14 +229,30 @@ impl Plugin for DjangoPlugin {
             Box::new(checks::ast::DRFEmptyAuthClasses),
             Box::new(checks::ast::DjangoValidationErrorInDRF),
             Box::new(checks::ast::DRFNoPaginationClass),
-            Box::new(checks::ast::TooManyArguments { max_args: cfg.max_function_args }),
-            Box::new(checks::ast::TooManyReturnStatements { max_returns: cfg.max_return_statements }),
-            Box::new(checks::ast::TooManyBranches { max_branches: cfg.max_branches }),
-            Box::new(checks::ast::TooManyLocalVariables { max_locals: cfg.max_local_variables }),
-            Box::new(checks::ast::TooManyStatements { max_statements: cfg.max_statements }),
-            Box::new(checks::ast::ModelTooManyFields { max_fields: cfg.max_model_fields }),
-            Box::new(checks::ast::TooManyMethods { max_methods: cfg.max_class_methods }),
-            Box::new(checks::ast::DeeplyNestedCode { max_depth: cfg.max_nesting_depth }),
+            Box::new(checks::ast::TooManyArguments {
+                max_args: cfg.max_function_args,
+            }),
+            Box::new(checks::ast::TooManyReturnStatements {
+                max_returns: cfg.max_return_statements,
+            }),
+            Box::new(checks::ast::TooManyBranches {
+                max_branches: cfg.max_branches,
+            }),
+            Box::new(checks::ast::TooManyLocalVariables {
+                max_locals: cfg.max_local_variables,
+            }),
+            Box::new(checks::ast::TooManyStatements {
+                max_statements: cfg.max_statements,
+            }),
+            Box::new(checks::ast::ModelTooManyFields {
+                max_fields: cfg.max_model_fields,
+            }),
+            Box::new(checks::ast::TooManyMethods {
+                max_methods: cfg.max_class_methods,
+            }),
+            Box::new(checks::ast::DeeplyNestedCode {
+                max_depth: cfg.max_nesting_depth,
+            }),
             Box::new(checks::ast::ModelUnicodeNotCallable),
             Box::new(checks::ast::ModelHasUnicode),
             Box::new(checks::ast::HardCodedAuthUser),
@@ -262,11 +282,7 @@ impl Plugin for DjangoPlugin {
         checks
     }
 
-    fn project_checks(
-        &self,
-        project_dir: &std::path::Path,
-        toml_content: &str,
-    ) -> Vec<Diagnostic> {
+    fn project_checks(&self, project_dir: &std::path::Path, toml_content: &str) -> Vec<Diagnostic> {
         let settings_module = config::read_django_settings(toml_content).unwrap_or_else(|| {
             for candidate in &["settings", "config.settings", "conf.settings"] {
                 let path = project_dir.join(candidate.replace('.', "/") + ".py");
@@ -303,11 +319,7 @@ impl Plugin for DjangoPlugin {
 }
 
 impl DjangoPlugin {
-    fn check_graph_staleness(
-        &self,
-        project_dir: &std::path::Path,
-        graph_path: &std::path::Path,
-    ) {
+    fn check_graph_staleness(&self, project_dir: &std::path::Path, graph_path: &std::path::Path) {
         let graph_modified = match std::fs::metadata(graph_path).and_then(|m| m.modified()) {
             Ok(t) => t,
             Err(_) => return,
