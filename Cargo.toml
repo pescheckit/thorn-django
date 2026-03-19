@@ -7,12 +7,16 @@ description = "Django linting plugin for Thorn — a fast pylint-django alternat
 authors = ["Bram"]
 
 [dependencies]
-thorn-api = { git = "https://github.com/pescheckit/thorn" }
+thorn-api = { path = "../thorn/crates/thorn-api" }
 ruff_python_ast = { git = "https://github.com/astral-sh/ruff", tag = "0.11.6" }
 ruff_text_size = { git = "https://github.com/astral-sh/ruff", tag = "0.11.6" }
 ruff_python_parser = { git = "https://github.com/astral-sh/ruff", tag = "0.11.6" }
 toml = "0.8"
 pyo3 = { version = "0.23", features = ["auto-initialize"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+walkdir = "2"
+colored = "2"
 
 [dev-dependencies]
 tempfile = "3"

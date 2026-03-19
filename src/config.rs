@@ -167,6 +167,16 @@ pub fn read_django_excludes(toml_content: &str) -> Vec<String> {
     excludes
 }
 
+/// Read the `graph_file` path from `[tool.thorn-django]` in pyproject.toml, if set.
+pub fn read_graph_file_path(toml_content: &str) -> Option<String> {
+    let doc: toml::Value = toml_content.parse().ok()?;
+    doc.get("tool")
+        .and_then(|t| t.get("thorn-django"))
+        .and_then(|td| td.get("graph_file"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+}
+
 /// Read Django settings module. Checks in order:
 /// 1. THORN_DJANGO_SETTINGS env var
 /// 2. [tool.thorn-django] settings

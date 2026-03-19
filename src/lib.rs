@@ -2,7 +2,18 @@ pub mod bridge;
 mod checks;
 mod config;
 
-use thorn_api::{AppGraph, AstCheck, Diagnostic, GraphCheck, Plugin};
+use colored::Colorize;
+use std::collections::HashMap;
+use thorn_api::{AppGraph, AstCheck, Diagnostic, GraphCheck, InitResult, Plugin, PluginParam};
+
+/// Bundle format produced by `python -m thorn_django`:
+/// `{ "graph": {...}, "diagnostics": [...] }`
+#[derive(serde::Deserialize)]
+struct GraphBundle {
+    graph: AppGraph,
+    #[serde(default)]
+    diagnostics: Vec<Diagnostic>,
+}
 
 pub struct DjangoPlugin {
     has_graph: bool,
@@ -27,6 +38,191 @@ impl Plugin for DjangoPlugin {
 
     fn prefix(&self) -> &'static str {
         "DJ"
+    }
+
+    fn cli_params(&self) -> Vec<PluginParam> {
+        vec![
+            PluginParam {
+                name: "settings",
+                help: "Django settings module (e.g. myproject.settings.production)",
+                takes_value: true,
+            },
+            PluginParam {
+                name: "graph-file",
+                help: "Path to a pre-generated model graph JSON file",
+                takes_value: true,
+            },
+        ]
+    }
+
+    /// Discover the Django model graph and run dynamic validation.
+    ///
+    /// Priority for settings:
+    /// 1. `--django-settings` CLI arg
+    /// 2. `THORN_DJANGO_SETTINGS` env var
+    /// 3. `[tool.thorn-django] settings` in pyproject.toml
+    /// 4. `DJANGO_SETTINGS_MODULE` env var
+    ///
+    /// Priority for graph source:
+    /// 1. `--django-graph-file` CLI arg
+    /// 2. `THORN_GRAPH_FILE` env var
+    /// 3. `graph_file` key in `[tool.thorn-django]` pyproject.toml
+    /// 4. Auto-discovered `.thorn/graph.json` inside `project_dir`
+    /// 5. PyO3 in-process live extraction
+    /// 6. Subprocess: `python3 -m thorn_django --settings <module>`
+    fn initialize(
+        &mut self,
+        project_dir: &std::path::Path,
+        toml_content: &str,
+        cli_args: &HashMap<String, String>,
+    ) -> InitResult {
+        // ── 1. Resolve settings module ──────────────────────────────────────
+        // CLI arg takes highest priority
+        let settings_module = cli_args
+            .get("settings")
+            .cloned()
+            .or_else(|| config::read_django_settings(toml_content));
+
+        // ── 2. Discover graph file path ─────────────────────────────────────
+        // Priority: CLI arg > env var > [tool.thorn-django].graph_file > auto-discover
+        let graph_file = cli_args
+            .get("graph-file")
+            .map(|p| project_dir.join(p))
+            .or_else(|| {
+                std::env::var("THORN_GRAPH_FILE")
+                    .ok()
+                    .filter(|s| !s.is_empty())
+                    .map(std::path::PathBuf::from)
+            })
+            .or_else(|| config::read_graph_file_path(toml_content).map(|p| project_dir.join(p)))
+            .or_else(|| {
+                let auto = project_dir.join(".thorn/graph.json");
+                if auto.exists() {
+                    Some(auto)
+                } else {
+                    None
+                }
+            });
+
+        // ── 3. Try loading from graph file ──────────────────────────────────
+        if let Some(ref graph_path) = graph_file {
+            match std::fs::read_to_string(graph_path) {
+                Ok(json_str) => {
+                    // Try bundle format: { graph, diagnostics }
+                    if let Ok(bundle) = serde_json::from_str::<GraphBundle>(&json_str) {
+                        eprintln!(
+                            "{} Loaded {} models from {}",
+                            "✓".green(),
+                            bundle.graph.models.len(),
+                            graph_path.display()
+                        );
+                        if !bundle.diagnostics.is_empty() {
+                            eprintln!(
+                                "{} Dynamic validation found {} issue{}",
+                                "✓".green(),
+                                bundle.diagnostics.len(),
+                                if bundle.diagnostics.len() == 1 {
+                                    ""
+                                } else {
+                                    "s"
+                                }
+                            );
+                        }
+
+                        // Staleness check: are any models/*.py newer than the graph file?
+                        self.check_graph_staleness(project_dir, graph_path);
+
+                        let mut diagnostics = bundle.diagnostics;
+                        apply_dedup_and_filter(&mut diagnostics);
+
+                        return InitResult {
+                            graph: bundle.graph,
+                            diagnostics,
+                        };
+                    }
+
+                    // Try plain graph format: { models, ... }
+                    if let Ok(graph) = serde_json::from_str::<AppGraph>(&json_str) {
+                        eprintln!(
+                            "{} Loaded {} models from {}",
+                            "✓".green(),
+                            graph.models.len(),
+                            graph_path.display()
+                        );
+
+                        self.check_graph_staleness(project_dir, graph_path);
+
+                        return InitResult {
+                            graph,
+                            diagnostics: vec![],
+                        };
+                    }
+
+                    eprintln!("{} Failed to parse graph file", "✗".red());
+                }
+                Err(e) => {
+                    eprintln!("{} Failed to read graph file: {e}", "✗".red());
+                }
+            }
+        }
+
+        // ── 4. No graph file — try live extraction ──────────────────────────
+        if let Some(ref settings) = settings_module {
+            // 4a. PyO3 in-process (fastest — if Django is importable)
+            if let Ok((graph, mut dv)) = bridge::extract_and_validate(settings) {
+                eprintln!(
+                    "{} Loaded {} models via PyO3",
+                    "✓".green(),
+                    graph.models.len()
+                );
+                apply_dedup_and_filter(&mut dv);
+                return InitResult {
+                    graph,
+                    diagnostics: dv,
+                };
+            }
+
+            // 4b. Subprocess: python3 -m thorn_django --settings <module>
+            let graph_target = project_dir.join(".thorn/graph.json");
+            for python in &["python3", "python"] {
+                let ok = std::process::Command::new(python)
+                    .args(["-m", "thorn_django", "--settings", settings])
+                    .current_dir(project_dir)
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status()
+                    .map(|s| s.success())
+                    .unwrap_or(false);
+
+                if ok && graph_target.exists() {
+                    if let Ok(s) = std::fs::read_to_string(&graph_target) {
+                        if let Ok(bundle) = serde_json::from_str::<GraphBundle>(&s) {
+                            eprintln!(
+                                "{} Loaded {} models via python subprocess",
+                                "✓".green(),
+                                bundle.graph.models.len()
+                            );
+                            let mut dv = bundle.diagnostics;
+                            apply_dedup_and_filter(&mut dv);
+                            return InitResult {
+                                graph: bundle.graph,
+                                diagnostics: dv,
+                            };
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── 5. Nothing worked ───────────────────────────────────────────────
+        eprintln!(
+            "{} No .thorn/graph.json and no Django environment found.\n  \
+             Generate once: python -m thorn_django --settings myproject.settings\n  \
+             Or in Docker:  docker compose exec app python -m thorn_django",
+            "!".yellow(),
+        );
+
+        InitResult::default()
     }
 
     fn on_graph_ready(&mut self, graph: &AppGraph) {
@@ -163,4 +359,82 @@ impl Plugin for DjangoPlugin {
             Box::new(checks::graph::MissingReverseAccessor), // DJ104
         ]
     }
+}
+
+impl DjangoPlugin {
+    /// Warn if any `models*.py` file inside `project_dir` is newer than `graph_path`.
+    fn check_graph_staleness(&self, project_dir: &std::path::Path, graph_path: &std::path::Path) {
+        let graph_modified = match std::fs::metadata(graph_path).and_then(|m| m.modified()) {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+
+        let has_newer = walkdir::WalkDir::new(project_dir)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                let p = e.path().to_string_lossy();
+                p.ends_with(".py")
+                    && (p.contains("models") || p.contains("model"))
+                    && !p.contains("site-packages")
+                    && !p.contains("/.venv/")
+                    && !p.contains("migrations")
+            })
+            .any(|e| {
+                e.metadata()
+                    .ok()
+                    .and_then(|m| m.modified().ok())
+                    .map(|t| t > graph_modified)
+                    .unwrap_or(false)
+            });
+
+        if has_newer {
+            eprintln!(
+                "{} .thorn/graph.json may be stale — model files have changed.\n  \
+                 Regenerate with: docker compose exec app python -m thorn_django",
+                "!".yellow(),
+            );
+        }
+    }
+}
+
+/// Apply deduplication and third-party filtering rules to a set of dynamic diagnostics.
+///
+/// Rules applied:
+/// - DV001 (runtime MRO __str__ check) supersedes DJ101 (graph-based __str__ check):
+///   if any DV001 exists, DJ101 entries are dropped.
+/// - DV diagnostics from site-packages / venv paths are dropped.
+/// - DV diagnostics whose filename has no path separator and no `.py` suffix
+///   (i.e. a bare module name like `"qualificationcheck.forms"`) are from
+///   third-party packages whose source file could not be resolved — drop them.
+fn apply_dedup_and_filter(diagnostics: &mut Vec<Diagnostic>) {
+    // DV001 supersedes DJ101
+    let has_dv001 = diagnostics.iter().any(|d| d.code == "DV001");
+    if has_dv001 {
+        diagnostics.retain(|d| d.code != "DJ101");
+    }
+
+    // Filter third-party / site-packages DV diagnostics
+    diagnostics.retain(|d| {
+        if d.code.starts_with("DV")
+            && d.code != "DV-WARN"
+            && d.code != "DV-ERR"
+            && d.code != "DV-CRIT"
+        {
+            let f = &d.filename;
+            if f.contains("site-packages") || f.contains("/venv/") || f.contains("/.venv/") {
+                return false;
+            }
+            // Bare module-name filenames (no "/" and no ".py") are third-party
+            if !f.contains('/')
+                && !f.contains(".py")
+                && f != "migrations"
+                && f != "django.checks"
+                && f != "settings"
+            {
+                return false;
+            }
+        }
+        true
+    });
 }
