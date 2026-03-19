@@ -14,13 +14,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - run: git clone --depth 1 https://github.com/pescheckit/thorn ../thorn
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install Python dev headers
-        run: sudo apt-get update && sudo apt-get install -y python3-dev
+      - run: sudo apt-get update && sudo apt-get install -y python3-dev
       - run: cargo test
 
   release:
@@ -40,5 +40,12 @@ jobs:
             Add to your `Cargo.toml`:
             ```toml
             [dependencies]
+            thorn-django = { git = "https://github.com/pescheckit/thorn-django", tag = "${{ github.ref_name }}" }
+            ```
+
+            Or with a specific thorn version:
+            ```toml
+            [dependencies]
+            thorn-api = { git = "https://github.com/pescheckit/thorn", tag = "v0.1.0" }
             thorn-django = { git = "https://github.com/pescheckit/thorn-django", tag = "${{ github.ref_name }}" }
             ```
