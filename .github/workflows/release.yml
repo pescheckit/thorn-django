@@ -50,8 +50,16 @@ jobs:
           # Linux ARM
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
+            python: "3.11"
+            artifact: thorn-django-py311-linux-aarch64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
             python: "3.12"
             artifact: thorn-django-py312-linux-aarch64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            python: "3.13"
+            artifact: thorn-django-py313-linux-aarch64
           # macOS
           - target: x86_64-apple-darwin
             os: macos-latest
