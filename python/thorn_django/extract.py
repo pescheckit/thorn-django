@@ -79,8 +79,52 @@ def _extract_model(model):
         "relations": _extract_relations(meta),
         "managers": _extract_managers(meta),
         "parents": [p.__name__ for p in meta.parents],
-        "methods": [n for n in dir(model) if not n.startswith("_") and callable(getattr(model, n, None))],
+        "methods": _extract_methods(model),
     }
+
+
+def _extract_methods(model):
+    """Extract public methods and @property attributes from a model class."""
+    methods = []
+    # Walk MRO to find properties defined on any parent class
+    property_names = set()
+    for cls in model.__mro__:
+        if cls.__name__ in ("Model", "object"):
+            break
+        for name, val in cls.__dict__.items():
+            if isinstance(val, property):
+                property_names.add(name)
+    for n in dir(model):
+        if n.startswith("_") and not n.startswith("__"):
+            continue
+        if n in property_names:
+            methods.append(n)
+        elif callable(getattr(model, n, None)):
+            methods.append(n)
+    return methods
+
+
+def _extract_choices(field):
+    """Extract choices from a field, handling EnumChoiceField, TextChoices, etc."""
+    try:
+        # flatchoices always returns flat [(value, label)] even for grouped/enum choices
+        choices = getattr(field, 'flatchoices', None)
+        if choices:
+            return [(str(c[0]), str(c[1])) for c in choices]
+        # Regular choices
+        choices = getattr(field, 'choices', None)
+        if choices:
+            return [(str(c[0]), str(c[1])) for c in choices]
+        # EnumChoiceField stores the enum on field.enum
+        enum_cls = getattr(field, 'enum_class', None) or getattr(field, 'enum', None)
+        if enum_cls:
+            try:
+                return [(str(e.value), str(e.name)) for e in enum_cls]
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return []
 
 
 def _extract_fields(meta):
@@ -98,7 +142,7 @@ def _extract_fields(meta):
             "name": f.name, "column": f.column, "field_class": fclass,
             "native_type": _field_type(fclass), "nullable": f.null, "blank": f.blank,
             "default": default, "max_length": getattr(f, "max_length", None),
-            "choices": [(str(c[0]), str(c[1])) for c in (f.choices or [])],
+            "choices": _extract_choices(f),
             "validators": [f"{v.__class__.__module__}.{v.__class__.__name__}" for v in f.validators],
             "primary_key": f.primary_key, "unique": f.unique, "db_index": f.db_index,
         })
@@ -335,9 +379,10 @@ def _check_dotted_path_settings():
     return diags
 
 
-def _safe_source_file(cls):
-    """Get source file for a class, or module name as fallback."""
+def _safe_source_file(obj):
+    """Get source file for a class or instance, or module name as fallback."""
     import inspect
+    cls = obj if isinstance(obj, type) else type(obj)
     try:
         return os.path.relpath(inspect.getfile(cls))
     except (TypeError, OSError):
@@ -373,7 +418,7 @@ def _check_admin():
                 continue
             diags.append({
                 "code": "DV701", "range": None, "line": None, "col": None,
-                "message": f"Admin '{admin_class.__name__}' list_display references '{field}' which doesn't exist on model '{model_name}'.",
+                "message": f"Admin '{type(admin_class).__name__}' list_display references '{field}' which doesn't exist on model '{model_name}'.",
                 "filename": source,
             })
 
@@ -386,7 +431,7 @@ def _check_admin():
                 if base not in field_names and not hasattr(model, base):
                     diags.append({
                         "code": "DV701", "range": None, "line": None, "col": None,
-                        "message": f"Admin '{admin_class.__name__}' list_filter references '{field}' which doesn't exist on model '{model_name}'.",
+                        "message": f"Admin '{type(admin_class).__name__}' list_filter references '{field}' which doesn't exist on model '{model_name}'.",
                         "filename": source,
                     })
 
@@ -396,7 +441,7 @@ def _check_admin():
             if base not in field_names and not hasattr(model, base):
                 diags.append({
                     "code": "DV701", "range": None, "line": None, "col": None,
-                    "message": f"Admin '{admin_class.__name__}' search_fields references '{field}' which doesn't exist on model '{model_name}'.",
+                    "message": f"Admin '{type(admin_class).__name__}' search_fields references '{field}' which doesn't exist on model '{model_name}'.",
                     "filename": source,
                 })
 
@@ -410,7 +455,7 @@ def _check_admin():
                 continue
             diags.append({
                 "code": "DV701", "range": None, "line": None, "col": None,
-                "message": f"Admin '{admin_class.__name__}' readonly_fields references '{field}' which doesn't exist on model '{model_name}'.",
+                "message": f"Admin '{type(admin_class).__name__}' readonly_fields references '{field}' which doesn't exist on model '{model_name}'.",
                 "filename": source,
             })
 
@@ -431,13 +476,39 @@ def _check_url_names():
 
 
 def _walk_url_names(resolver, prefix, seen_names, diags):
-    for pattern in resolver.url_patterns:
-        if hasattr(pattern, 'url_patterns'):
-            ns = getattr(pattern, 'namespace', '') or ''
-            _walk_url_names(pattern, f"{prefix}{ns}:" if ns else prefix, seen_names, diags)
-        else:
-            name = getattr(pattern, 'name', None)
-            if name:
+    """Recursively walk URL patterns and flag genuinely duplicate full namespaced names.
+
+    Namespace resolution: Django tracks two separate attributes on a URLResolver
+    created by include():
+      - ``namespace``: the instance namespace (used for reversing), may be empty.
+      - ``app_name``: the application namespace (from the app itself), may also be empty.
+
+    We prefer ``namespace`` over ``app_name`` so that instance overrides are respected.
+    If neither is set the patterns live in the current namespace level (prefix unchanged).
+
+    The walker must be robust against exotic pattern types (re_path, custom resolvers)
+    and must not let one broken pattern abort the rest of the walk.
+    """
+    try:
+        url_patterns = resolver.url_patterns
+    except Exception:
+        return
+
+    for pattern in url_patterns:
+        try:
+            if hasattr(pattern, 'url_patterns'):
+                # This is an included URLconf (URLResolver).
+                # Build the namespace segment: prefer explicit instance namespace,
+                # fall back to app_name, fall back to nothing.
+                ns = (getattr(pattern, 'namespace', '') or
+                      getattr(pattern, 'app_name', '') or '')
+                child_prefix = f"{prefix}{ns}:" if ns else prefix
+                _walk_url_names(pattern, child_prefix, seen_names, diags)
+            else:
+                # This is a terminal URLPattern.
+                name = getattr(pattern, 'name', None)
+                if not name:
+                    continue
                 full_name = f"{prefix}{name}"
                 if full_name in seen_names:
                     diags.append({
@@ -446,7 +517,9 @@ def _walk_url_names(resolver, prefix, seen_names, diags):
                         "filename": "urls",
                     })
                 else:
-                    seen_names[full_name] = str(pattern.pattern)
+                    seen_names[full_name] = str(getattr(pattern, 'pattern', pattern))
+        except Exception:
+            continue
 
 
 def _check_forms():

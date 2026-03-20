@@ -413,25 +413,69 @@ fn extract_default(py: Python<'_>, field: &Bound<'_, PyAny>) -> PyResult<Option<
 }
 
 fn extract_choices(field: &Bound<'_, PyAny>) -> PyResult<Vec<(String, String)>> {
-    let choices = field.getattr("choices")?;
-    if choices.is_none() {
+    // Prefer flatchoices which is always a flat list of (value, label) pairs,
+    // even for grouped choices and TextChoices/IntegerChoices enums.
+    let choices_obj = field
+        .getattr("flatchoices")
+        .or_else(|_| field.getattr("choices"))?;
+
+    if choices_obj.is_none() {
+        // choices is Python None — no choices defined
         return Ok(vec![]);
     }
 
-    let mut result = Vec::new();
-    for choice in choices.try_iter()? {
-        let choice = choice?;
-        let value: String = choice
-            .get_item(0)
-            .map(|v| format!("{v}"))
-            .unwrap_or_default();
-        let label: String = choice
-            .get_item(1)
-            .map(|v| format!("{v}"))
-            .unwrap_or_default();
-        result.push((value, label));
+    // For EnumChoiceField the choices may live on an enum_class attribute.
+    // If the resolved object is not iterable or is empty, fall back to that.
+    let mut result = collect_flat_choices(&choices_obj);
+
+    if result.is_empty() {
+        // Try EnumChoiceField: field.enum_class.choices
+        if let Ok(enum_cls) = field.getattr("enum_class") {
+            if !enum_cls.is_none() {
+                if let Ok(enum_choices) = enum_cls.getattr("choices") {
+                    result = collect_flat_choices(&enum_choices);
+                }
+            }
+        }
     }
+
     Ok(result)
+}
+
+/// Collect (value, label) pairs from a Django choices iterable.
+/// Handles both flat choices `[(val, label), ...]` and grouped choices
+/// `[(group, [(val, label), ...]), ...]`.
+fn collect_flat_choices(choices_obj: &Bound<'_, PyAny>) -> Vec<(String, String)> {
+    let mut result = Vec::new();
+    let Ok(iter) = choices_obj.try_iter() else {
+        return result;
+    };
+    for item in iter.flatten() {
+        let Ok(label_or_group) = item.get_item(1) else {
+            continue;
+        };
+        // Grouped choices: item[1] is a list/tuple of (value, label) pairs
+        if label_or_group.try_iter().is_ok()
+            && !label_or_group.is_instance_of::<pyo3::types::PyString>()
+        {
+            // This is a group — recurse into sub-choices
+            for sub in label_or_group.try_iter().into_iter().flatten().flatten() {
+                let value = sub.get_item(0).map(|v| format!("{v}")).unwrap_or_default();
+                let label = sub.get_item(1).map(|v| format!("{v}")).unwrap_or_default();
+                if !value.is_empty() || !label.is_empty() {
+                    result.push((value, label));
+                }
+            }
+        } else {
+            // Flat choice: item = (value, label)
+            let value = item.get_item(0).map(|v| format!("{v}")).unwrap_or_default();
+            let label = format!("{label_or_group}");
+            if !value.is_empty() || !label.is_empty() {
+                result.push((value, label));
+            }
+        }
+    }
+    result
 }
 
 fn extract_field_validators(field: &Bound<'_, PyAny>) -> PyResult<Vec<String>> {
@@ -449,7 +493,8 @@ fn extract_public_methods(_py: Python<'_>, obj: &Bound<'_, PyAny>) -> PyResult<V
     let mut methods = Vec::new();
     for item in dir.iter() {
         let name_str: String = item.extract()?;
-        if name_str.starts_with('_') {
+        // Skip private methods (_foo) but keep dunder methods (__str__, __repr__, etc.)
+        if name_str.starts_with('_') && !name_str.starts_with("__") {
             continue;
         }
         if let Ok(attr) = obj.getattr(name_str.as_str()) {

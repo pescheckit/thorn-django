@@ -1500,6 +1500,7 @@ impl<'a> Visitor<'_> for SaveCreateInLoopVisitor<'a> {
                 diags: vec![],
                 filename: self.filename,
                 in_try: false,
+                in_early_exit_if: false,
             };
             for body_stmt in &for_stmt.body {
                 finder.visit_stmt(body_stmt);
@@ -1512,6 +1513,7 @@ impl<'a> Visitor<'_> for SaveCreateInLoopVisitor<'a> {
                 diags: vec![],
                 filename: self.filename,
                 in_try: false,
+                in_early_exit_if: false,
             };
             for body_stmt in &while_stmt.body {
                 finder.visit_stmt(body_stmt);
@@ -1526,11 +1528,22 @@ struct LoopDbCallFinder<'a> {
     diags: Vec<Diagnostic>,
     filename: &'a str,
     in_try: bool,
+    /// True when we are inside an if-block that ends with return/break. Saves
+    /// inside such blocks execute at most once per loop iteration and should not
+    /// be flagged (search-and-update / early-exit pattern).
+    in_early_exit_if: bool,
+}
+
+/// Returns true if any statement in `body` is a `return` or `break` at the
+/// top level, indicating the block exits the loop after executing.
+fn block_has_early_exit(body: &[Stmt]) -> bool {
+    body.iter()
+        .any(|s| matches!(s, Stmt::Return(_) | Stmt::Break(_)))
 }
 
 impl<'a> Visitor<'_> for LoopDbCallFinder<'a> {
     fn visit_stmt(&mut self, stmt: &Stmt) {
-        // Track try/except blocks
+        // Track try/except blocks — saves inside try are error-handling patterns.
         if let Stmt::Try(try_stmt) = stmt {
             let prev = self.in_try;
             self.in_try = true;
@@ -1559,11 +1572,31 @@ impl<'a> Visitor<'_> for LoopDbCallFinder<'a> {
             return;
         }
 
+        // For `if` blocks: if the body terminates with return/break, any save
+        // inside it only runs once and the loop exits — not a bulk-write pattern.
+        if let Stmt::If(if_stmt) = stmt {
+            // Walk the if-body, marking early-exit status.
+            let prev = self.in_early_exit_if;
+            self.in_early_exit_if = block_has_early_exit(&if_stmt.body);
+            for s in &if_stmt.body {
+                visitor::walk_stmt(self, s);
+            }
+            // Walk each elif/else clause with its own early-exit status.
+            for clause in &if_stmt.elif_else_clauses {
+                self.in_early_exit_if = block_has_early_exit(&clause.body);
+                for s in &clause.body {
+                    visitor::walk_stmt(self, s);
+                }
+            }
+            self.in_early_exit_if = prev;
+            return;
+        }
+
         visitor::walk_stmt(self, stmt);
     }
 
     fn visit_expr(&mut self, expr: &Expr) {
-        if self.in_try {
+        if self.in_try || self.in_early_exit_if {
             visitor::walk_expr(self, expr);
             return;
         }
@@ -2006,21 +2039,28 @@ impl AstCheck for DjangoValidationErrorInDRF {
         if ctx.filename.contains("/migrations/") {
             return vec![];
         }
-        let mut has_django_validation_error = false;
+
+        // Determine the local name under which Django's ValidationError was imported,
+        // and whether this file also imports from rest_framework.
+        let mut django_ve_local_name: Option<String> = None;
+        let mut import_range = None;
         let mut has_rest_framework = false;
-        let mut error_range = None;
 
         for stmt in &ctx.module.body {
             if let Stmt::ImportFrom(imp) = stmt {
                 let module = imp.module.as_ref().map(|m| m.as_str()).unwrap_or("");
                 if module == "django.core.exceptions" {
-                    let imports_ve = imp
-                        .names
-                        .iter()
-                        .any(|alias| alias.name.as_str() == "ValidationError");
-                    if imports_ve {
-                        has_django_validation_error = true;
-                        error_range = Some(imp.range());
+                    for alias in &imp.names {
+                        if alias.name.as_str() == "ValidationError" {
+                            // Respect `as` aliases: `from ... import ValidationError as DVE`
+                            let local = alias
+                                .asname
+                                .as_ref()
+                                .map(|a| a.to_string())
+                                .unwrap_or_else(|| "ValidationError".to_string());
+                            django_ve_local_name = Some(local);
+                            import_range = Some(imp.range());
+                        }
                     }
                 }
                 if module.starts_with("rest_framework") {
@@ -2029,20 +2069,110 @@ impl AstCheck for DjangoValidationErrorInDRF {
             }
         }
 
-        if has_django_validation_error && has_rest_framework {
-            if let Some(range) = error_range {
-                return vec![
-                    Diagnostic::new(
-                        "DJ032",
-                        "Using Django's ValidationError in DRF code causes 500 errors. Use rest_framework.exceptions.ValidationError.",
-                        ctx.filename,
-                    )
-                    .with_range(range),
-                ];
-            }
+        let (Some(local_name), true, Some(range)) =
+            (django_ve_local_name, has_rest_framework, import_range)
+        else {
+            return vec![];
+        };
+
+        // Only flag when Django's ValidationError is actually *raised*. Catching it
+        // in an `except ValidationError` handler is correct DRF usage and must not
+        // be flagged.
+        if is_django_ve_raised(&ctx.module.body, &local_name) {
+            return vec![Diagnostic::new(
+                "DJ032",
+                "Using Django's ValidationError in DRF code causes 500 errors. Use rest_framework.exceptions.ValidationError.",
+                ctx.filename,
+            )
+            .with_range(range)];
         }
 
         vec![]
+    }
+}
+
+/// Recursively walk a list of statements to detect `raise ValidationError(...)`
+/// (identified by its local import name). Returns true as soon as one is found.
+/// Ignores uses inside `except ValidationError` handlers — those are catching it,
+/// not raising it, so they are safe.
+fn is_django_ve_raised(body: &[Stmt], local_name: &str) -> bool {
+    for stmt in body {
+        if stmt_raises_django_ve(stmt, local_name) {
+            return true;
+        }
+    }
+    false
+}
+
+fn stmt_raises_django_ve(stmt: &Stmt, local_name: &str) -> bool {
+    match stmt {
+        Stmt::Raise(raise_stmt) => {
+            // `raise ValidationError(...)` or `raise ValidationError`
+            if let Some(exc) = &raise_stmt.exc {
+                return expr_names_django_ve(exc, local_name);
+            }
+        }
+        Stmt::FunctionDef(func) => {
+            if is_django_ve_raised(&func.body, local_name) {
+                return true;
+            }
+        }
+        Stmt::ClassDef(cls) => {
+            if is_django_ve_raised(&cls.body, local_name) {
+                return true;
+            }
+        }
+        Stmt::If(if_stmt) => {
+            if is_django_ve_raised(&if_stmt.body, local_name) {
+                return true;
+            }
+            for clause in &if_stmt.elif_else_clauses {
+                if is_django_ve_raised(&clause.body, local_name) {
+                    return true;
+                }
+            }
+        }
+        Stmt::For(for_stmt) => {
+            if is_django_ve_raised(&for_stmt.body, local_name)
+                || is_django_ve_raised(&for_stmt.orelse, local_name)
+            {
+                return true;
+            }
+        }
+        Stmt::While(while_stmt) => {
+            if is_django_ve_raised(&while_stmt.body, local_name)
+                || is_django_ve_raised(&while_stmt.orelse, local_name)
+            {
+                return true;
+            }
+        }
+        Stmt::With(with_stmt) => {
+            if is_django_ve_raised(&with_stmt.body, local_name) {
+                return true;
+            }
+        }
+        Stmt::Try(try_stmt) => {
+            // Check the try body and else/finally blocks for raises.
+            // Do NOT recurse into except handlers — catching the error is fine.
+            if is_django_ve_raised(&try_stmt.body, local_name)
+                || is_django_ve_raised(&try_stmt.orelse, local_name)
+                || is_django_ve_raised(&try_stmt.finalbody, local_name)
+            {
+                return true;
+            }
+        }
+        _ => {}
+    }
+    false
+}
+
+/// Returns true if this expression is `ValidationError` (bare name) or
+/// `ValidationError(...)` (a call to it).
+fn expr_names_django_ve(expr: &Expr, local_name: &str) -> bool {
+    match expr {
+        Expr::Name(n) => n.id.as_str() == local_name,
+        Expr::Call(call) => expr_names_django_ve(&call.func, local_name),
+        _ => false,
     }
 }
 

@@ -168,12 +168,18 @@ impl<'a, 'g> Visitor<'a> for ValuesFieldVisitor<'g> {
                         visitor::walk_expr(self, expr);
                         return;
                     }
+                    // Collect annotation names from the queryset chain
+                    let annotations = collect_annotation_names(&call.func);
                     for arg in &call.arguments.args {
                         if let Expr::StringLiteral(s) = arg {
                             let field_name = s.value.to_str();
                             let base_field = field_name.split("__").next().unwrap_or(field_name);
                             let base_field = base_field.strip_prefix('-').unwrap_or(base_field);
-                            if base_field == "pk" {
+                            if base_field == "pk" || base_field == "?" {
+                                continue;
+                            }
+                            // Skip fields introduced by .annotate() in the chain
+                            if annotations.contains(&base_field.to_string()) {
                                 continue;
                             }
                             let found = candidates
@@ -503,6 +509,7 @@ impl AstCheck for ForeignKeyIdAccess {
             diagnostics: vec![],
             filename: ctx.filename.to_string(),
             graph: ctx.graph,
+            current_class: None,
         };
         v.visit_body(&ctx.module.body);
         v.diagnostics
@@ -513,9 +520,27 @@ struct FKIdVisitor<'g> {
     diagnostics: Vec<Diagnostic>,
     filename: String,
     graph: &'g thorn_api::AppGraph,
+    /// Name of the class definition currently being visited, if any.
+    /// We only flag `self.X.id` when the enclosing class is a known model
+    /// that has a FK/OneToOne relation named `X`.  Without this guard the
+    /// check fires for *any* code that has a `self.<anything>.id` pattern
+    /// where `<anything>` happens to share a name with a FK on some unrelated
+    /// model — producing false positives across the entire codebase.
+    current_class: Option<String>,
 }
 
 impl<'a, 'g> Visitor<'a> for FKIdVisitor<'g> {
+    fn visit_stmt(&mut self, stmt: &'a Stmt) {
+        if let Stmt::ClassDef(class) = stmt {
+            let prev = self.current_class.take();
+            self.current_class = Some(class.name.to_string());
+            visitor::walk_stmt(self, stmt);
+            self.current_class = prev;
+        } else {
+            visitor::walk_stmt(self, stmt);
+        }
+    }
+
     fn visit_expr(&mut self, expr: &'a Expr) {
         if let Expr::Attribute(outer) = expr {
             if matches!(outer.attr.as_str(), "id" | "pk") {
@@ -524,18 +549,26 @@ impl<'a, 'g> Visitor<'a> for FKIdVisitor<'g> {
                     let is_self =
                         matches!(inner.value.as_ref(), Expr::Name(n) if n.id.as_str() == "self");
                     if is_self {
-                        for model in &self.graph.models {
-                            for rel in &model.relations {
-                                if rel.name == field_name
-                                    && matches!(
-                                        rel.kind,
-                                        thorn_api::RelationKind::ForeignKey
-                                            | thorn_api::RelationKind::OneToOne
-                                    )
-                                {
-                                    self.diagnostics.push(Diagnostic::new("DJ207", format!("'self.{field_name}.{}' triggers a DB query. Use 'self.{field_name}_id' — reads the cached column directly.", outer.attr.as_str()), &self.filename).with_range(expr.range()));
-                                    return;
-                                }
+                        // Only flag when we are inside a class whose name matches
+                        // a model that owns a FK/OneToOne relation named `field_name`.
+                        // This prevents false positives for non-model classes or for
+                        // attribute names that happen to collide with a FK on a
+                        // different model.
+                        if let Some(class_name) = &self.current_class {
+                            let model_has_fk = self.graph.models.iter().any(|model| {
+                                model.name == *class_name
+                                    && model.relations.iter().any(|rel| {
+                                        rel.name == field_name
+                                            && matches!(
+                                                rel.kind,
+                                                thorn_api::RelationKind::ForeignKey
+                                                    | thorn_api::RelationKind::OneToOne
+                                            )
+                                    })
+                            });
+                            if model_has_fk {
+                                self.diagnostics.push(Diagnostic::new("DJ207", format!("'self.{field_name}.{}' triggers a DB query. Use 'self.{field_name}_id' — reads the cached column directly.", outer.attr.as_str()), &self.filename).with_range(expr.range()));
+                                return;
                             }
                         }
                     }
