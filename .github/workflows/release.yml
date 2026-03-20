@@ -173,8 +173,93 @@ jobs:
           name: deb-${{ matrix.arch }}
           path: "*.deb"
 
-  # TODO: Add publish-apt job once GH_PAT secret is configured.
-  # It will push .deb packages to pescheckit/pescheckit.github.io APT repo.
+  publish-apt:
+    name: Publish APT Repository
+    needs: package-deb
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout gh-pages branch
+        uses: actions/checkout@v5
+        with:
+          ref: gh-pages
+          path: gh-pages
+        continue-on-error: true
+
+      - name: Initialize gh-pages if needed
+        run: |
+          if [ ! -d "gh-pages" ]; then
+            mkdir -p gh-pages
+            cd gh-pages
+            git init
+            git checkout -b gh-pages
+          fi
+
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          path: packages
+
+      - name: Install reprepro
+        run: sudo apt-get update && sudo apt-get install -y reprepro
+
+      - name: Import GPG key
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | base64 -d | gpg --batch --import
+
+      - name: Setup reprepro config
+        run: |
+          mkdir -p gh-pages/apt/conf
+          GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format LONG | grep sec | head -1 | sed 's/.*\/\([^ ]*\) .*/\1/')
+          cat > gh-pages/apt/conf/distributions <<EOF
+          Origin: PesCheckIT
+          Label: thorn-django
+          Codename: stable
+          Architectures: amd64 arm64
+          Components: main
+          Description: Thorn Django Linter Package Repository
+          SignWith: ${GPG_KEY_ID}
+          EOF
+
+      - name: Add packages to repository
+        run: |
+          cd gh-pages/apt
+          for deb in ../../packages/*/*.deb; do
+            reprepro includedeb stable "$deb"
+          done
+
+      - name: Export GPG public key
+        run: |
+          gpg --armor --export > gh-pages/gpg.key
+
+      - name: Create index.html
+        run: |
+          cat > gh-pages/index.html <<'HTMLEOF'
+          <!DOCTYPE html>
+          <html>
+          <head><title>PesCheckIT APT Repository</title></head>
+          <body>
+            <h1>PesCheckIT APT Repository</h1>
+            <pre>
+          # Import GPG key
+          curl -fsSL https://pescheckit.github.io/thorn-django/gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/pescheckit.gpg
+
+          # Add repository
+          echo "deb [signed-by=/usr/share/keyrings/pescheckit.gpg] https://pescheckit.github.io/thorn-django/apt stable main" | \
+            sudo tee /etc/apt/sources.list.d/thorn-django.list
+
+          # Install
+          sudo apt update
+          sudo apt install thorn-django
+            </pre>
+          </body>
+          </html>
+          HTMLEOF
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./gh-pages
 
   release:
     name: Create GitHub Release
