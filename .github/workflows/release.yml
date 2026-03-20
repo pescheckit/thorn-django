@@ -47,7 +47,12 @@ jobs:
             os: ubuntu-latest
             python: "3.13"
             artifact: thorn-django-py313-linux-x86_64
-          # macOS — system Python is sufficient; x86_64 cross-compiles from ARM runner
+          # Linux ARM
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            python: "3.12"
+            artifact: thorn-django-py312-linux-aarch64
+          # macOS
           - target: x86_64-apple-darwin
             os: macos-latest
             python: "3.12"
@@ -75,9 +80,14 @@ jobs:
 
       # Python dev headers are bundled on macOS via setup-python; on Linux we
       # need the explicit package.
-      - name: Install Python dev headers (Linux)
+      - name: Install build deps (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y python3-dev
+        run: |
+          sudo apt-get update && sudo apt-get install -y python3-dev
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+            sudo apt-get install -y gcc-aarch64-linux-gnu
+            echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          fi
 
       - name: Build
         env:
@@ -147,12 +157,11 @@ jobs:
             > "${PKG_DIR}/DEBIAN/control"
 
           dpkg-deb --build "${PKG_DIR}"
-          mv "${PKG_DIR}.deb" "thorn-django_${DEB_VERSION}_amd64.deb"
 
       - uses: actions/upload-artifact@v4
         with:
           name: deb-package
-          path: "thorn-django_*.deb"
+          path: "*.deb"
 
   # TODO: Add publish-apt job once GH_PAT secret is configured.
   # It will push .deb packages to pescheckit/pescheckit.github.io APT repo.
