@@ -97,11 +97,17 @@ jobs:
 
       - name: Configure Python paths
         run: |
-          PYTHON_PATH=$(python${{ matrix.python }} -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")
           echo "PYO3_PYTHON=python${{ matrix.python }}" >> $GITHUB_ENV
           echo "PYO3_CROSS_PYTHON_VERSION=${{ matrix.python }}" >> $GITHUB_ENV
-          if [ -n "$PYTHON_PATH" ]; then
-            echo "RUSTFLAGS=-L ${PYTHON_PATH}" >> $GITHUB_ENV
+          if [[ "${{ matrix.target }}" == aarch64* ]]; then
+            # Cross-compile: no host libpython available, use abi3 mode
+            echo "PYO3_NO_PYTHON=1" >> $GITHUB_ENV
+          else
+            # Native build: tell linker where libpython lives
+            PYTHON_PATH=$(python${{ matrix.python }} -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")
+            if [ -n "$PYTHON_PATH" ]; then
+              echo "RUSTFLAGS=-L ${PYTHON_PATH}" >> $GITHUB_ENV
+            fi
           fi
 
       - name: Build
