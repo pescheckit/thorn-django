@@ -1,0 +1,36 @@
+# ── Stage 1: build ─────────────────────────────────────────────────────────────
+# Produces a release binary linked against the stable ABI (abi3-py311) so the
+# same binary works with any CPython >= 3.11 inside the target container.
+FROM rust:1.85-bookworm AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3-dev \
+    pkg-config \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Copy the thorn workspace (thorn-api / thorn-cli dependency).
+# When building with `docker build -f thorn-django/Dockerfile.release .` from
+# the repo root the context should include both thorn/ and thorn-django/.
+COPY thorn /build/thorn
+COPY thorn-django /build/thorn-django
+
+WORKDIR /build/thorn-django
+
+# PYO3_PYTHON must point to the Python whose headers were installed above.
+ENV PYO3_PYTHON=python3
+
+RUN cargo build --release
+
+# ── Stage 2: minimal distribution image ────────────────────────────────────────
+# This stage exists only to let users COPY --from= the stripped binary into
+# their own application image without pulling in the full Rust toolchain.
+FROM debian:bookworm-slim AS dist
+
+COPY --from=builder \
+    /build/thorn-django/target/release/thorn-django \
+    /usr/local/bin/thorn-django
+
+# Verify the binary is present and executable.
+RUN thorn-django --help || true

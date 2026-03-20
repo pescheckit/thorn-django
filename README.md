@@ -143,18 +143,73 @@ settings = "myproject.settings.production"
    └──────────────┘
 ```
 
+## Running in Docker
+
+The binary is compiled with PyO3's stable ABI (`abi3-py311`) so a single
+pre-built binary works with any CPython 3.11+ inside your container.
+
+### Option 1: Add the binary to your application image
+
+In your project's `Dockerfile`:
+
+```dockerfile
+# Copy thorn-django from the pre-built release image
+COPY --from=ghcr.io/pescheckit/thorn-django:latest /usr/local/bin/thorn-django /usr/local/bin/thorn-django
+```
+
+Or download it directly from GitHub Releases:
+
+```dockerfile
+ADD https://github.com/pescheckit/thorn-django/releases/latest/download/thorn-django-linux-x86_64.tar.gz /tmp/
+RUN tar xzf /tmp/thorn-django-linux-x86_64.tar.gz -C /usr/local/bin/ \
+ && rm /tmp/thorn-django-linux-x86_64.tar.gz
+```
+
+Then run a full lint — one command, no pre-generation step required:
+
+```sh
+docker compose exec app thorn-django . --django-settings=myproject.settings.production
+```
+
+### Option 2: Mount the binary from the host
+
+If the binary is already installed on your host you can bind-mount it into a
+running container:
+
+```sh
+docker compose exec \
+  -e DJANGO_SETTINGS_MODULE=myproject.settings.production \
+  app \
+  /usr/local/bin/thorn-django . --django-settings=myproject.settings.production
+```
+
+### Building the binary for a Docker target
+
+Use the provided `Dockerfile.release` from the repo root:
+
+```sh
+# Build from the repo root (context must include both thorn/ and thorn-django/)
+docker build -f thorn-django/Dockerfile.release -t thorn-django-release .
+
+# Extract the binary
+docker create --name thorn-tmp thorn-django-release
+docker cp thorn-tmp:/usr/local/bin/thorn-django ./thorn-django-linux-x86_64
+docker rm thorn-tmp
+```
+
 ## Graph Generation
 
 ```sh
-# Option 1: Auto-detect (if Django is importable)
+# Option 1: Auto-detect via PyO3 (fastest — Django booted in-process)
 thorn-django . --django-settings=myproject.settings
 
-# Option 2: Pre-generate (for Docker / CI)
-python -m thorn_django --settings myproject.settings
-# Creates .thorn/graph.json
+# Option 2: Inside Docker — same one-liner
+docker compose exec app thorn-django . --django-settings=myproject.settings
 
-# Option 3: In Docker
-docker compose exec app python -m thorn_django
+# Option 3: Pre-generate and cache (useful for CI where the binary runs outside Docker)
+python -m thorn_django --settings myproject.settings
+# Creates .thorn/graph.json — only needs regenerating when models change
+thorn-django .
 ```
 
 ## Building
