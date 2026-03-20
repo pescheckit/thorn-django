@@ -86,8 +86,6 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
-      # Python dev headers are bundled on macOS via setup-python; on Linux we
-      # need the explicit package.
       - name: Install build deps (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -97,10 +95,16 @@ jobs:
             echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
           fi
 
+      - name: Configure Python paths
+        run: |
+          PYTHON_PATH=$(python${{ matrix.python }} -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")
+          echo "PYO3_PYTHON=python${{ matrix.python }}" >> $GITHUB_ENV
+          echo "PYO3_CROSS_PYTHON_VERSION=${{ matrix.python }}" >> $GITHUB_ENV
+          if [ -n "$PYTHON_PATH" ]; then
+            echo "RUSTFLAGS=-L ${PYTHON_PATH}" >> $GITHUB_ENV
+          fi
+
       - name: Build
-        env:
-          PYO3_PYTHON: python${{ matrix.python }}
-          PYO3_CROSS_PYTHON_VERSION: ${{ matrix.python }}
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Package
