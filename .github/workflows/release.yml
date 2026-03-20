@@ -224,6 +224,9 @@ jobs:
         run: |
           cd gh-pages/apt
           for deb in ../../packages/*/*.deb; do
+            # Remove old version first if it exists (re-tagged releases)
+            PKG_NAME=$(dpkg-deb -f "$deb" Package)
+            reprepro remove stable "$PKG_NAME" 2>/dev/null || true
             reprepro includedeb stable "$deb"
           done
 
