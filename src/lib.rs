@@ -144,8 +144,9 @@ impl Plugin for DjangoPlugin {
             }
         }
 
-        // ── 4. No graph file — try live extraction ──────────────────────────
+        // ── 4. No graph file — auto-generate ────────────────────────────
         if let Some(ref settings) = settings_module {
+            // 4a. Try PyO3 in-process (fastest)
             if let Ok((graph, mut dv)) = bridge::extract_and_validate(settings) {
                 eprintln!(
                     "{} Loaded {} models via PyO3",
@@ -160,60 +161,103 @@ impl Plugin for DjangoPlugin {
             }
 
             let graph_target = project_dir.join(".thorn/graph.json");
+            let pythonpath = build_pythonpath();
 
-            // Find our bundled Python module so the subprocess can import it
-            let python_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("python");
-            let extra_pythonpath = if python_dir.join("thorn_django").exists() {
-                python_dir.to_string_lossy().to_string()
-            } else {
-                String::new()
-            };
-            let current_pp = std::env::var("PYTHONPATH").unwrap_or_default();
-            let pythonpath = match (extra_pythonpath.is_empty(), current_pp.is_empty()) {
-                (true, _) => current_pp,
-                (false, true) => extra_pythonpath,
-                (false, false) => format!("{extra_pythonpath}:{current_pp}"),
-            };
+            // 4b. Try project venv (detect common venv directory names)
+            if let Some(python) = find_venv_python(project_dir) {
+                eprintln!(
+                    "{} Found venv at {}, generating graph...",
+                    "!".yellow(),
+                    python.parent().unwrap_or(project_dir).display()
+                );
+                if run_python_extract(&python, settings, project_dir, &pythonpath, &graph_target) {
+                    if let Some(result) = load_graph_bundle(&graph_target) {
+                        eprintln!(
+                            "{} Loaded {} models via venv",
+                            "✓".green(),
+                            result.graph.models.len()
+                        );
+                        return result;
+                    }
+                }
+            }
 
-            for python in &["python3", "python"] {
-                let ok = std::process::Command::new(python)
-                    .args(["-m", "thorn_django", "--settings", settings])
-                    .current_dir(project_dir)
-                    .env("PYTHONPATH", &pythonpath)
-                    .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
-                    .status()
-                    .map(|s| s.success())
-                    .unwrap_or(false);
-                if ok && graph_target.exists() {
-                    if let Ok(s) = std::fs::read_to_string(&graph_target) {
-                        if let Ok(bundle) = serde_json::from_str::<GraphBundle>(&s) {
+            // 4c. Try system python
+            for python_name in &["python3", "python"] {
+                let python = std::path::PathBuf::from(python_name);
+                if run_python_extract(&python, settings, project_dir, &pythonpath, &graph_target) {
+                    if let Some(result) = load_graph_bundle(&graph_target) {
+                        eprintln!(
+                            "{} Loaded {} models via {}",
+                            "✓".green(),
+                            result.graph.models.len(),
+                            python_name
+                        );
+                        return result;
+                    }
+                }
+            }
+
+            // 4d. Try Docker (if compose file exists)
+            let has_compose = [
+                "docker-compose.yml",
+                "docker-compose.yaml",
+                "compose.yml",
+                "compose.yaml",
+            ]
+            .iter()
+            .any(|f| project_dir.join(f).exists());
+            if has_compose {
+                eprintln!(
+                    "{} No local Python environment found, trying Docker...",
+                    "!".yellow()
+                );
+                for mode in &["exec", "run"] {
+                    let mut args = vec!["compose"];
+                    if *mode == "exec" {
+                        args.extend(["exec", "-T", "app"]);
+                    } else {
+                        args.extend(["run", "--rm", "--no-deps", "app"]);
+                    }
+                    args.extend(["python", "-m", "thorn_django", "--settings", settings]);
+                    let ok = std::process::Command::new("docker")
+                        .args(&args)
+                        .current_dir(project_dir)
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .status()
+                        .map(|s| s.success())
+                        .unwrap_or(false);
+                    if ok {
+                        if let Some(result) = load_graph_bundle(&graph_target) {
                             eprintln!(
-                                "{} Loaded {} models via python subprocess",
+                                "{} Loaded {} models via Docker",
                                 "✓".green(),
-                                bundle.graph.models.len()
+                                result.graph.models.len()
                             );
-                            let mut dv = bundle.diagnostics;
-                            apply_dedup_and_filter(&mut dv);
-                            return InitResult {
-                                graph: bundle.graph,
-                                diagnostics: dv,
-                            };
+                            return result;
                         }
                     }
                 }
             }
-        }
 
-        // ── 5. Nothing worked — give helpful instructions ────────────────
-        let settings_hint = settings_module.as_deref().unwrap_or("myproject.settings");
-        eprintln!(
-            "{} No model graph found. Generate once with:\n  \
-             python -m thorn_django --settings {settings_hint}\n  \
-             Or in Docker:\n  \
-             docker compose exec app python -m thorn_django --settings {settings_hint}",
-            "!".yellow(),
-        );
+            // 4e. Nothing worked
+            eprintln!(
+                "{} Could not generate model graph.\n  \
+                 Make sure Django is importable and run:\n  \
+                 python -m thorn_django --settings {settings}\n  \
+                 Or in Docker:\n  \
+                 docker compose exec app python -m thorn_django --settings {settings}",
+                "!".yellow(),
+            );
+        } else {
+            eprintln!(
+                "{} No settings module specified. Use --django-settings or set in pyproject.toml:\n  \
+                 [tool.thorn-django]\n  \
+                 settings = \"myproject.settings\"",
+                "!".yellow(),
+            );
+        }
         InitResult::default()
     }
 
@@ -411,4 +455,84 @@ fn apply_dedup_and_filter(diagnostics: &mut Vec<Diagnostic>) {
         }
         true
     });
+}
+
+/// Find a Python interpreter in a virtual environment inside the project directory.
+/// Checks common venv directory names.
+fn find_venv_python(project_dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    for dir_name in &["venv", ".venv", "env", ".env", "virtualenv", ".virtualenv"] {
+        let python = project_dir.join(dir_name).join("bin/python");
+        if python.exists() {
+            return Some(python);
+        }
+        // Windows
+        let python_win = project_dir.join(dir_name).join("Scripts/python.exe");
+        if python_win.exists() {
+            return Some(python_win);
+        }
+    }
+    // Also check VIRTUAL_ENV env var
+    if let Ok(venv) = std::env::var("VIRTUAL_ENV") {
+        let python = std::path::PathBuf::from(&venv).join("bin/python");
+        if python.exists() {
+            return Some(python);
+        }
+    }
+    None
+}
+
+/// Build PYTHONPATH that includes our bundled Python module.
+fn build_pythonpath() -> String {
+    let python_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("python");
+    let extra = if python_dir.join("thorn_django").exists() {
+        python_dir.to_string_lossy().to_string()
+    } else {
+        String::new()
+    };
+    let current = std::env::var("PYTHONPATH").unwrap_or_default();
+    match (extra.is_empty(), current.is_empty()) {
+        (true, _) => current,
+        (false, true) => extra,
+        (false, false) => format!("{extra}:{current}"),
+    }
+}
+
+/// Run `python -m thorn_django --settings <module>` and return whether it succeeded.
+fn run_python_extract(
+    python: &std::path::Path,
+    settings: &str,
+    project_dir: &std::path::Path,
+    pythonpath: &str,
+    graph_target: &std::path::Path,
+) -> bool {
+    let ok = std::process::Command::new(python)
+        .args(["-m", "thorn_django", "--settings", settings])
+        .current_dir(project_dir)
+        .env("PYTHONPATH", pythonpath)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    ok && graph_target.exists()
+}
+
+/// Load a graph bundle from a JSON file and apply dedup/filtering.
+fn load_graph_bundle(path: &std::path::Path) -> Option<InitResult> {
+    let s = std::fs::read_to_string(path).ok()?;
+    if let Ok(bundle) = serde_json::from_str::<GraphBundle>(&s) {
+        let mut diagnostics = bundle.diagnostics;
+        apply_dedup_and_filter(&mut diagnostics);
+        return Some(InitResult {
+            graph: bundle.graph,
+            diagnostics,
+        });
+    }
+    if let Ok(graph) = serde_json::from_str::<AppGraph>(&s) {
+        return Some(InitResult {
+            graph,
+            diagnostics: vec![],
+        });
+    }
+    None
 }
