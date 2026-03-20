@@ -115,47 +115,48 @@ jobs:
           path: dist/${{ matrix.artifact }}.tar.gz
 
   package-deb:
-    name: Create .deb package
+    name: Create .deb (${{ matrix.arch }})
     needs: build
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            binary: thorn-django-py311-linux-x86_64
+          - arch: arm64
+            binary: thorn-django-py311-linux-aarch64
     steps:
       - uses: actions/download-artifact@v4
         with:
-          # The py311 binary is the best choice for the .deb: it runs on any
-          # Python >= 3.11 because PyO3 links against the stable ABI (abi3).
-          name: thorn-django-py311-linux-x86_64
+          name: ${{ matrix.binary }}
           path: dist/
 
       - name: Extract version from tag
         id: version
         run: |
-          # v0.1.1-alpha  →  0.1.1~alpha   (Debian tilde pre-release convention)
           RAW="${GITHUB_REF_NAME#v}"
           DEB_VERSION="$(echo "$RAW" | sed 's/-/~/g')"
-          echo "raw=${RAW}"           >> "$GITHUB_OUTPUT"
-          echo "deb=${DEB_VERSION}"   >> "$GITHUB_OUTPUT"
+          echo "deb=${DEB_VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Build .deb
         env:
           DEB_VERSION: ${{ steps.version.outputs.deb }}
         run: |
-          PKG_DIR="thorn-django_${DEB_VERSION}_amd64"
+          PKG_DIR="thorn-django_${DEB_VERSION}_${{ matrix.arch }}"
 
           install -d "${PKG_DIR}/DEBIAN"
           install -d "${PKG_DIR}/usr/local/bin"
 
-          tar xzf dist/thorn-django-py311-linux-x86_64.tar.gz -C dist/
-          install -m 755 dist/thorn-django-py311-linux-x86_64 \
+          tar xzf dist/${{ matrix.binary }}.tar.gz -C dist/
+          install -m 755 dist/${{ matrix.binary }} \
             "${PKG_DIR}/usr/local/bin/thorn-django"
 
-          # dpkg-deb is strict: control fields must have no leading whitespace.
-          # Using printf avoids any shell-indentation leaking into the file.
           printf '%s\n' \
             "Package: thorn-django" \
             "Version: ${DEB_VERSION}" \
             "Section: devel" \
             "Priority: optional" \
-            "Architecture: amd64" \
+            "Architecture: ${{ matrix.arch }}" \
             "Depends: python3 (>= 3.11)" \
             "Maintainer: PesCheckIT <packages@pescheckit.github.io>" \
             "Homepage: https://github.com/pescheckit/thorn-django" \
@@ -168,7 +169,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: deb-package
+          name: deb-${{ matrix.arch }}
           path: "*.deb"
 
   # TODO: Add publish-apt job once GH_PAT secret is configured.
