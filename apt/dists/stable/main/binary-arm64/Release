@@ -1,0 +1,5 @@
+Component: main
+Origin: PesCheckIT
+Label: thorn-django
+Architecture: arm64
+Description: Thorn Django Linter Package Repository

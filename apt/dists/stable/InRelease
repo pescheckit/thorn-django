@@ -1,0 +1,47 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+Origin: PesCheckIT
+Label: thorn-django
+Codename: stable
+Date: Fri, 20 Mar 2026 14:36:27 UTC
+Architectures: amd64 arm64
+Components: main
+Description: Thorn Django Linter Package Repository
+MD5Sum:
+ 3e7dd1401aea1b3c57ca140a2d748774 684 main/binary-amd64/Packages
+ 888a6e145813a4650b5645c7427d6be0 478 main/binary-amd64/Packages.gz
+ 65938847ad5575958dd3ab819a208141 127 main/binary-amd64/Release
+ 650c718b504b7977001f7928ed1b6ae8 684 main/binary-arm64/Packages
+ a5c3030fa472c53015cbb7228afd3a77 480 main/binary-arm64/Packages.gz
+ 9b35d553570aab8c3411ad0128f3c015 127 main/binary-arm64/Release
+SHA1:
+ 58e3d6827bb0c72bbd7af635e098cf96edc60f9d 684 main/binary-amd64/Packages
+ 3e551906b951822557634dc6164bc3de14a2a44a 478 main/binary-amd64/Packages.gz
+ e77a0f3de79b5a9c33485878918a875cb52d7f71 127 main/binary-amd64/Release
+ b6756ca5738ca53c572f1cb58547843b4167eeb0 684 main/binary-arm64/Packages
+ d78a0c0e6807b62ac163cd9789b6f5eab9e5971d 480 main/binary-arm64/Packages.gz
+ f03cefb887cd171d3155b030167f9e127200d3a9 127 main/binary-arm64/Release
+SHA256:
+ c843cbf8381212d072d26a0da7d5397f0621a4dbf73751a70fc3a7affa1af05a 684 main/binary-amd64/Packages
+ a224b9429b91bc3bbf500bc6a6b941c0b4a831c01a42ece9e87423b3ed99173a 478 main/binary-amd64/Packages.gz
+ 0b62392e68225f029281ab2f86f8dc8f8e62b07ea562b6a99401a51db0a37b10 127 main/binary-amd64/Release
+ 40e954a8943c6f6137e478cc6a23834fe26e9937d30a2c99657626fcc2b4f28e 684 main/binary-arm64/Packages
+ d4682284d9885609c6afb1081d03f500e0c104d29e7fa4043312193b8b8c992f 480 main/binary-arm64/Packages.gz
+ df01b433c19f99fb5cb4e696856c5afafb7459e034b293e50681b02a07885ffc 127 main/binary-arm64/Release
+-----BEGIN PGP SIGNATURE-----
+
+iQIzBAEBCgAdFiEETGCh7mMuezleOhCxHUyQfzn/sSEFAmm9W2sACgkQHUyQfzn/
+sSFpRQ/+JicOJ6Uefd12mksDobxddf83w525iEPPDzmqO43eCdAEfS9r8H0SEQB1
+o8S45WeIijrecb5CrLH/opkKXHLP4wPhCDGmz/EZFOcNa3/oGmSvo0QNTwL79K1I
+BSGPG3KOpi6qFjlHHtqyl0F2VXszn235wakjjz5cAeZxwbykH/r28anloH//E3nM
+ohW7VJxCO6N5FawEwipatzOAHJi/cJDH302YDqiYg0djsy/RenVme/RrVwY0TsKA
+HSVOvML6GgMjMjML2tPPrFzvu0VUCLHFzDxJ5xYViN8OEMkZqA/SWx3xgnDCcByV
+xf1dqAIyJ8mz5H+y+ix5iTqM9+OUfh2zMNNMynZi48pNTSQflT8ctrm0G4xxhBxn
+C4rYMWsISIcuuhIHep3oU9THiiPmWyYJ4rFuRNHO5LXhOxHaECcRfkwQP1NsvRYb
+3zLcvPQZKZ/JTUWQUv87obLIbqhibC/y8uiKhU7Ak4mNwC0DsS9WeV58B/u7ux2c
+FYRAmUcH2o73pPXM0AtPXULbAEzVkP6xkxbJ/0JIj/CSdyrlQUGaqWqLkrsJ77H+
+XrXjUMStrtm2ot0MnD0XXGt6tbGg9xPH2HOw8u2ZSprBc8XjV0YZu5pZhFN/aFSv
+wYaA2bvmz+4tLDLu11Q58M+xtvs3OA4QmIDzIjcoEmSeu5FrZOk=
+=yNnL
+-----END PGP SIGNATURE-----

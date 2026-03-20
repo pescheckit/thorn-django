@@ -1,0 +1,7 @@
+Origin: PesCheckIT
+Label: thorn-django
+Codename: stable
+Architectures: amd64 arm64
+Components: main
+Description: Thorn Django Linter Package Repository
+SignWith: 1D4C907F39FFB121

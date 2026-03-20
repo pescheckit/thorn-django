@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head><title>PesCheckIT APT Repository</title></head>
+<body>
+  <h1>PesCheckIT APT Repository</h1>
+  <pre>
+# Import GPG key
+curl -fsSL https://pescheckit.github.io/thorn-django/gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/pescheckit.gpg
+
+# Add repository
+echo "deb [signed-by=/usr/share/keyrings/pescheckit.gpg] https://pescheckit.github.io/thorn-django/apt stable main" | \
+  sudo tee /etc/apt/sources.list.d/thorn-django.list
+
+# Install
+sudo apt update
+sudo apt install thorn-django
+  </pre>
+</body>
+</html>

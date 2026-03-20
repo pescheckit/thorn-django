@@ -1,0 +1,17 @@
+Package: thorn-django
+Version: 0.1.2~alpha
+Architecture: amd64
+Depends: python3 (>= 3.11)
+Maintainer: PesCheckIT <packages@pescheckit.github.io>
+Homepage: https://github.com/pescheckit/thorn-django
+Priority: optional
+Section: devel
+Filename: pool/main/t/thorn-django/thorn-django_0.1.2~alpha_amd64.deb
+Size: 1497582
+SHA256: 8ba6a745f4f297cfde30342a3e111d59c95fb1a0f87a08a9d7199782dd6cbe48
+SHA1: a9cf51464f66278e893007ecbae8c11d210aef9d
+MD5sum: 496fbda65c2cb85102e51cb43ec74097
+Description: Fast Django/DRF linter with live model introspection
+ Catches bugs, security issues, and performance problems by combining
+ static AST analysis with runtime model graph validation. 57+ checks.
+
