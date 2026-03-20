@@ -241,19 +241,38 @@ impl Plugin for DjangoPlugin {
                 }
             }
 
-            // 4e. Nothing worked
-            eprintln!(
-                "{} Could not generate model graph.\n  \
-                 Make sure Django is importable and run:\n  \
-                 python -m thorn_django --settings {settings}\n  \
-                 Or in Docker:\n  \
-                 docker compose exec app python -m thorn_django --settings {settings}",
-                "!".yellow(),
-            );
+            // 4e. Nothing worked — give context-aware instructions
+            if has_compose {
+                // Docker project but thorn_django not in the container
+                eprintln!(
+                    "{} Could not generate model graph. Docker is available but \
+                     'thorn_django' is not installed in the container.\n\n  \
+                     Option 1: Add thorn_django to your Docker image:\n    \
+                     pip install thorn-django  (or copy the python/ folder)\n\n  \
+                     Option 2: Generate the graph manually:\n    \
+                     docker compose exec app python -m thorn_django --settings {settings}\n\n  \
+                     The graph is cached at .thorn/graph.json — only needs regenerating when models change.",
+                    "!".yellow(),
+                );
+            } else {
+                // No Docker, no venv
+                eprintln!(
+                    "{} Could not generate model graph. No Python environment with Django found.\n\n  \
+                     Option 1: Activate your virtualenv and run:\n    \
+                     python -m thorn_django --settings {settings}\n\n  \
+                     Option 2: If using Docker, run:\n    \
+                     docker compose exec app python -m thorn_django --settings {settings}\n\n  \
+                     The graph is cached at .thorn/graph.json — only needs regenerating when models change.",
+                    "!".yellow(),
+                );
+            }
         } else {
             eprintln!(
-                "{} No settings module specified. Use --django-settings or set in pyproject.toml:\n  \
-                 [tool.thorn-django]\n  \
+                "{} No Django settings module specified.\n\n  \
+                 Use the CLI flag:\n    \
+                 thorn-django . --django-settings=myproject.settings\n\n  \
+                 Or add to pyproject.toml:\n    \
+                 [tool.thorn-django]\n    \
                  settings = \"myproject.settings\"",
                 "!".yellow(),
             );

@@ -895,3 +895,154 @@ fn should_flag_name(name: &str, defined: &HashSet<String>) -> bool {
     }
     true
 }
+
+// ── Tests ─────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use thorn_api::{AppGraph, AstCheck, CheckContext, FrameworkSettings};
+
+    fn run_flow_check(source: &str) -> Vec<String> {
+        let parsed =
+            ruff_python_parser::parse(source, ruff_python_parser::Mode::Module.into()).unwrap();
+        let module = parsed.into_syntax().module().unwrap().clone();
+        let graph = AppGraph {
+            models: vec![],
+            installed_apps: vec![],
+            settings: FrameworkSettings::default(),
+        };
+        let ctx = CheckContext {
+            module: &module,
+            source,
+            filename: "test.py",
+            graph: &graph,
+        };
+        PossiblyUsedBeforeAssignment
+            .check(&ctx)
+            .into_iter()
+            .map(|d| d.code)
+            .collect()
+    }
+
+    // ── DJ050: variable used before assignment in one branch ──────────────
+
+    #[test]
+    fn dj050_flags_variable_used_before_assignment_in_one_branch() {
+        // `result` is only assigned in the `if` branch; the `else` branch is
+        // missing, so after the if statement `result` may be undefined.
+        let source = r#"
+def my_func(condition):
+    if condition:
+        result = 42
+    return result
+"#;
+        let codes = run_flow_check(source);
+        assert!(
+            codes.contains(&"DJ050".to_string()),
+            "expected DJ050 for variable used before assignment on one branch, got: {:?}",
+            codes
+        );
+    }
+
+    #[test]
+    fn dj050_no_error_when_assigned_in_all_branches() {
+        // `result` is assigned in both `if` and `else`, so it is always defined.
+        let source = r#"
+def my_func(condition):
+    if condition:
+        result = 42
+    else:
+        result = 0
+    return result
+"#;
+        let codes = run_flow_check(source);
+        assert!(
+            !codes.contains(&"DJ050".to_string()),
+            "unexpected DJ050 when variable assigned in all branches, got: {:?}",
+            codes
+        );
+    }
+
+    #[test]
+    fn dj050_no_error_for_function_parameters() {
+        // Parameters are always defined; they must never be flagged.
+        let source = r#"
+def my_func(x, y, z):
+    return x + y + z
+"#;
+        let codes = run_flow_check(source);
+        assert!(
+            !codes.contains(&"DJ050".to_string()),
+            "unexpected DJ050 for function parameters, got: {:?}",
+            codes
+        );
+    }
+
+    #[test]
+    fn dj050_no_error_for_module_level_imports() {
+        // Module-level imports are always available inside functions.
+        let source = r#"
+import os
+
+def my_func():
+    return os.path.join('a', 'b')
+"#;
+        let codes = run_flow_check(source);
+        assert!(
+            !codes.contains(&"DJ050".to_string()),
+            "unexpected DJ050 for module-level import reference, got: {:?}",
+            codes
+        );
+    }
+
+    #[test]
+    fn dj050_no_error_for_unconditional_assignment_before_use() {
+        let source = r#"
+def my_func():
+    value = compute()
+    return value
+"#;
+        let codes = run_flow_check(source);
+        assert!(
+            !codes.contains(&"DJ050".to_string()),
+            "unexpected DJ050 for unconditionally assigned variable, got: {:?}",
+            codes
+        );
+    }
+
+    #[test]
+    fn dj050_skips_test_files() {
+        // The check explicitly skips files whose path contains '/tests/'.
+        let source = r#"
+def test_something(condition):
+    if condition:
+        result = 1
+    return result
+"#;
+        let parsed =
+            ruff_python_parser::parse(source, ruff_python_parser::Mode::Module.into()).unwrap();
+        let module = parsed.into_syntax().module().unwrap().clone();
+        let graph = AppGraph {
+            models: vec![],
+            installed_apps: vec![],
+            settings: FrameworkSettings::default(),
+        };
+        let ctx = CheckContext {
+            module: &module,
+            source,
+            filename: "myapp/tests/test_views.py",
+            graph: &graph,
+        };
+        let codes: Vec<String> = PossiblyUsedBeforeAssignment
+            .check(&ctx)
+            .into_iter()
+            .map(|d| d.code)
+            .collect();
+        assert!(
+            !codes.contains(&"DJ050".to_string()),
+            "unexpected DJ050 in test file, got: {:?}",
+            codes
+        );
+    }
+}

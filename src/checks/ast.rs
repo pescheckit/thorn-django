@@ -4128,3 +4128,779 @@ fn is_drf_view(class: &StmtClassDef) -> bool {
         })
     })
 }
+
+// ── Tests ─────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use thorn_api::{AppGraph, AstCheck, CheckContext};
+
+    /// Parse `source` as a Python module, run `check` against it, and return
+    /// the list of diagnostic codes produced.
+    fn run_check(check: &dyn AstCheck, source: &str) -> Vec<String> {
+        let parsed =
+            ruff_python_parser::parse(source, ruff_python_parser::Mode::Module.into()).unwrap();
+        let module = parsed.into_syntax().module().unwrap().clone();
+        let graph = AppGraph::default();
+        let ctx = CheckContext {
+            module: &module,
+            source,
+            filename: "test.py",
+            graph: &graph,
+        };
+        check.check(&ctx).into_iter().map(|d| d.code).collect()
+    }
+
+    /// Same as `run_check` but allows the caller to supply a custom filename so
+    /// that filename-based skip rules (migrations, seed, webhook, …) can be
+    /// exercised.
+    fn run_check_with_filename(check: &dyn AstCheck, source: &str, filename: &str) -> Vec<String> {
+        let parsed =
+            ruff_python_parser::parse(source, ruff_python_parser::Mode::Module.into()).unwrap();
+        let module = parsed.into_syntax().module().unwrap().clone();
+        let graph = AppGraph::default();
+        let ctx = CheckContext {
+            module: &module,
+            source,
+            filename,
+            graph: &graph,
+        };
+        check.check(&ctx).into_iter().map(|d| d.code).collect()
+    }
+
+    // ── DJ001: NullableStringField ────────────────────────────────────────
+
+    #[test]
+    fn dj001_triggers_on_charfield_null_true() {
+        let src = "name = models.CharField(max_length=100, null=True)";
+        assert!(run_check(&NullableStringField, src).contains(&"DJ001".to_string()));
+    }
+
+    #[test]
+    fn dj001_triggers_on_textfield_null_true() {
+        let src = "bio = models.TextField(null=True)";
+        assert!(run_check(&NullableStringField, src).contains(&"DJ001".to_string()));
+    }
+
+    #[test]
+    fn dj001_triggers_on_emailfield_null_true() {
+        let src = "email = models.EmailField(null=True)";
+        assert!(run_check(&NullableStringField, src).contains(&"DJ001".to_string()));
+    }
+
+    /// null=True is allowed on string fields when unique=True is also present,
+    /// because the database needs NULL to distinguish "no value" from the empty
+    /// string in a unique index.
+    #[test]
+    fn dj001_no_trigger_when_unique_also_true() {
+        let src = "slug = models.SlugField(max_length=50, null=True, unique=True)";
+        assert!(run_check(&NullableStringField, src).is_empty());
+    }
+
+    #[test]
+    fn dj001_no_trigger_without_null_true() {
+        let src = "name = models.CharField(max_length=100, blank=True)";
+        assert!(run_check(&NullableStringField, src).is_empty());
+    }
+
+    // ── DJ002: ModelFormUsesExclude ───────────────────────────────────────
+
+    #[test]
+    fn dj002_triggers_on_modelform_with_exclude() {
+        let src = r#"
+class ContactForm(ModelForm):
+    class Meta:
+        model = Contact
+        exclude = ["secret"]
+"#;
+        assert!(run_check(&ModelFormUsesExclude, src).contains(&"DJ002".to_string()));
+    }
+
+    #[test]
+    fn dj002_no_trigger_when_using_fields() {
+        let src = r#"
+class ContactForm(ModelForm):
+    class Meta:
+        model = Contact
+        fields = ["name", "email"]
+"#;
+        assert!(run_check(&ModelFormUsesExclude, src).is_empty());
+    }
+
+    /// A non-ModelForm class with an exclude attribute must not be flagged.
+    #[test]
+    fn dj002_no_trigger_on_plain_class() {
+        let src = r#"
+class SomeConfig:
+    exclude = ["secret"]
+"#;
+        assert!(run_check(&ModelFormUsesExclude, src).is_empty());
+    }
+
+    // ── DJ003: RawSqlUsage ────────────────────────────────────────────────
+
+    #[test]
+    fn dj003_triggers_on_raw() {
+        let src = r#"qs = MyModel.objects.raw("SELECT * FROM myapp_mymodel")"#;
+        assert!(run_check(&RawSqlUsage, src).contains(&"DJ003".to_string()));
+    }
+
+    #[test]
+    fn dj003_triggers_on_extra() {
+        let src = r#"qs = MyModel.objects.extra(select={"n": "SELECT COUNT(*) FROM t"})"#;
+        assert!(run_check(&RawSqlUsage, src).contains(&"DJ003".to_string()));
+    }
+
+    #[test]
+    fn dj003_no_trigger_on_filter() {
+        let src = r#"qs = MyModel.objects.filter(active=True)"#;
+        assert!(run_check(&RawSqlUsage, src).is_empty());
+    }
+
+    // ── DJ004: LocalsInRender ─────────────────────────────────────────────
+
+    #[test]
+    fn dj004_triggers_on_render_with_locals() {
+        let src = r#"
+def my_view(request):
+    name = "Alice"
+    return render(request, "template.html", locals())
+"#;
+        assert!(run_check(&LocalsInRender, src).contains(&"DJ004".to_string()));
+    }
+
+    #[test]
+    fn dj004_no_trigger_on_explicit_context() {
+        let src = r#"
+def my_view(request):
+    name = "Alice"
+    return render(request, "template.html", {"name": name})
+"#;
+        assert!(run_check(&LocalsInRender, src).is_empty());
+    }
+
+    // ── DJ005: ModelWithoutStrMethod ──────────────────────────────────────
+
+    #[test]
+    fn dj005_triggers_when_str_missing() {
+        let src = r#"
+class Article(Model):
+    title = CharField(max_length=200)
+"#;
+        assert!(run_check(&ModelWithoutStrMethod, src).contains(&"DJ005".to_string()));
+    }
+
+    #[test]
+    fn dj005_no_trigger_when_str_present() {
+        let src = r#"
+class Article(Model):
+    title = CharField(max_length=200)
+
+    def __str__(self):
+        return self.title
+"#;
+        assert!(run_check(&ModelWithoutStrMethod, src).is_empty());
+    }
+
+    /// Abstract models are skipped — they are designed to be subclassed and
+    /// the concrete subclass should define __str__.
+    #[test]
+    fn dj005_no_trigger_on_abstract_model() {
+        let src = r#"
+class BaseModel(Model):
+    class Meta:
+        abstract = True
+"#;
+        assert!(run_check(&ModelWithoutStrMethod, src).is_empty());
+    }
+
+    // ── DJ006: ForeignKeyMissingOnDelete ──────────────────────────────────
+
+    #[test]
+    fn dj006_triggers_on_foreignkey_without_on_delete() {
+        let src = r#"author = models.ForeignKey(User)"#;
+        assert!(run_check(&ForeignKeyMissingOnDelete, src).contains(&"DJ006".to_string()));
+    }
+
+    #[test]
+    fn dj006_triggers_on_onetoonefield_without_on_delete() {
+        let src = r#"profile = models.OneToOneField(User)"#;
+        assert!(run_check(&ForeignKeyMissingOnDelete, src).contains(&"DJ006".to_string()));
+    }
+
+    #[test]
+    fn dj006_no_trigger_when_on_delete_present() {
+        let src = r#"author = models.ForeignKey(User, on_delete=models.CASCADE)"#;
+        assert!(run_check(&ForeignKeyMissingOnDelete, src).is_empty());
+    }
+
+    // ── DJ007: ModelFormFieldsAll ─────────────────────────────────────────
+
+    #[test]
+    fn dj007_triggers_on_fields_all_in_modelform() {
+        let src = r#"
+class ContactForm(ModelForm):
+    class Meta:
+        model = Contact
+        fields = "__all__"
+"#;
+        assert!(run_check(&ModelFormFieldsAll, src).contains(&"DJ007".to_string()));
+    }
+
+    #[test]
+    fn dj007_triggers_on_fields_all_in_serializer() {
+        let src = r#"
+class ContactSerializer(ModelSerializer):
+    class Meta:
+        model = Contact
+        fields = "__all__"
+"#;
+        assert!(run_check(&ModelFormFieldsAll, src).contains(&"DJ007".to_string()));
+    }
+
+    #[test]
+    fn dj007_no_trigger_on_explicit_field_list() {
+        let src = r#"
+class ContactForm(ModelForm):
+    class Meta:
+        model = Contact
+        fields = ["name", "email"]
+"#;
+        assert!(run_check(&ModelFormFieldsAll, src).is_empty());
+    }
+
+    // ── DJ008: RandomOrderBy ──────────────────────────────────────────────
+
+    #[test]
+    fn dj008_triggers_on_order_by_question_mark() {
+        let src = r#"qs = MyModel.objects.order_by("?")"#;
+        assert!(run_check(&RandomOrderBy, src).contains(&"DJ008".to_string()));
+    }
+
+    #[test]
+    fn dj008_no_trigger_on_normal_order_by() {
+        let src = r#"qs = MyModel.objects.order_by("-created_at")"#;
+        assert!(run_check(&RandomOrderBy, src).is_empty());
+    }
+
+    /// Seed files intentionally use order_by("?") for data variety — the check
+    /// must be suppressed for them.
+    #[test]
+    fn dj008_skipped_in_seed_file() {
+        let src = r#"qs = MyModel.objects.order_by("?")"#;
+        assert!(run_check_with_filename(&RandomOrderBy, src, "db/seed_users.py").is_empty());
+    }
+
+    // ── DJ009: QuerysetBoolEval ───────────────────────────────────────────
+
+    #[test]
+    fn dj009_triggers_on_if_queryset_bool_check() {
+        let src = r#"
+if MyModel.objects.filter(active=True):
+    pass
+"#;
+        assert!(run_check(&QuerysetBoolEval, src).contains(&"DJ009".to_string()));
+    }
+
+    #[test]
+    fn dj009_triggers_on_negated_queryset_bool_check() {
+        let src = r#"
+if not MyModel.objects.filter(active=True):
+    pass
+"#;
+        assert!(run_check(&QuerysetBoolEval, src).contains(&"DJ009".to_string()));
+    }
+
+    #[test]
+    fn dj009_no_trigger_on_if_exists() {
+        // .exists() returns a bool, not a queryset — this is the correct pattern.
+        let src = r#"
+if MyModel.objects.filter(active=True).exists():
+    pass
+"#;
+        assert!(run_check(&QuerysetBoolEval, src).is_empty());
+    }
+
+    // ── DJ010: QuerysetLen ────────────────────────────────────────────────
+
+    #[test]
+    fn dj010_triggers_on_len_of_queryset() {
+        let src = r#"n = len(MyModel.objects.all())"#;
+        assert!(run_check(&QuerysetLen, src).contains(&"DJ010".to_string()));
+    }
+
+    #[test]
+    fn dj010_triggers_on_len_of_filtered_queryset() {
+        let src = r#"n = len(MyModel.objects.filter(active=True))"#;
+        assert!(run_check(&QuerysetLen, src).contains(&"DJ010".to_string()));
+    }
+
+    #[test]
+    fn dj010_no_trigger_on_len_of_list() {
+        let src = r#"n = len([1, 2, 3])"#;
+        assert!(run_check(&QuerysetLen, src).is_empty());
+    }
+
+    #[test]
+    fn dj010_no_trigger_on_count() {
+        let src = r#"n = MyModel.objects.count()"#;
+        assert!(run_check(&QuerysetLen, src).is_empty());
+    }
+
+    // ── DJ011: MissingFExpression ─────────────────────────────────────────
+
+    #[test]
+    fn dj011_triggers_on_self_field_binop_assign_in_model() {
+        // self.score = self.score + 1  inside a Model method
+        let src = r#"
+class Player(Model):
+    def increment(self):
+        self.score = self.score + 1
+"#;
+        assert!(run_check(&MissingFExpression, src).contains(&"DJ011".to_string()));
+    }
+
+    #[test]
+    fn dj011_triggers_on_aug_assign_in_model() {
+        // self.score += 1  inside a Model method
+        let src = r#"
+class Player(Model):
+    def increment(self):
+        self.score += 1
+"#;
+        assert!(run_check(&MissingFExpression, src).contains(&"DJ011".to_string()));
+    }
+
+    /// Outside a Model class the pattern is not a race condition risk.
+    #[test]
+    fn dj011_no_trigger_outside_model() {
+        let src = r#"
+class Helper:
+    def run(self):
+        self.count += 1
+"#;
+        assert!(run_check(&MissingFExpression, src).is_empty());
+    }
+
+    // ── DJ014: RawSqlInjection ────────────────────────────────────────────
+
+    #[test]
+    fn dj014_triggers_on_execute_with_fstring() {
+        let src = r#"cursor.execute(f"SELECT * FROM t WHERE id = {user_id}")"#;
+        assert!(run_check(&RawSqlInjection, src).contains(&"DJ014".to_string()));
+    }
+
+    #[test]
+    fn dj014_triggers_on_execute_with_format() {
+        let src = r#"cursor.execute("SELECT * FROM t WHERE id = {}".format(user_id))"#;
+        assert!(run_check(&RawSqlInjection, src).contains(&"DJ014".to_string()));
+    }
+
+    #[test]
+    fn dj014_triggers_on_execute_with_percent_format() {
+        let src = r#"cursor.execute("SELECT * FROM t WHERE id = %s" % user_id)"#;
+        assert!(run_check(&RawSqlInjection, src).contains(&"DJ014".to_string()));
+    }
+
+    #[test]
+    fn dj014_triggers_on_raw_with_fstring() {
+        let src = r#"MyModel.objects.raw(f"SELECT * FROM t WHERE id = {user_id}")"#;
+        assert!(run_check(&RawSqlInjection, src).contains(&"DJ014".to_string()));
+    }
+
+    #[test]
+    fn dj014_no_trigger_on_parameterised_execute() {
+        // Parameterised queries pass values separately — not string interpolation.
+        let src = r#"cursor.execute("SELECT * FROM t WHERE id = %s", [user_id])"#;
+        assert!(run_check(&RawSqlInjection, src).is_empty());
+    }
+
+    /// Migration files contain developer-authored SQL, not user input.
+    #[test]
+    fn dj014_skipped_in_migrations() {
+        let src = r#"cursor.execute(f"ALTER TABLE {table} ADD COLUMN x int")"#;
+        assert!(
+            run_check_with_filename(&RawSqlInjection, src, "myapp/migrations/0001_initial.py")
+                .is_empty()
+        );
+    }
+
+    // ── DJ015: DefaultMetaOrdering ────────────────────────────────────────
+
+    #[test]
+    fn dj015_triggers_on_meta_ordering() {
+        let src = r#"
+class Article(Model):
+    class Meta:
+        ordering = ["-created_at"]
+"#;
+        assert!(run_check(&DefaultMetaOrdering, src).contains(&"DJ015".to_string()));
+    }
+
+    #[test]
+    fn dj015_no_trigger_without_ordering() {
+        let src = r#"
+class Article(Model):
+    class Meta:
+        verbose_name = "article"
+"#;
+        assert!(run_check(&DefaultMetaOrdering, src).is_empty());
+    }
+
+    // ── DJ017: CsrfExempt ─────────────────────────────────────────────────
+
+    #[test]
+    fn dj017_triggers_on_csrf_exempt_view() {
+        let src = r#"
+@csrf_exempt
+def my_view(request):
+    pass
+"#;
+        assert!(run_check(&CsrfExempt, src).contains(&"DJ017".to_string()));
+    }
+
+    #[test]
+    fn dj017_no_trigger_on_normal_view() {
+        let src = r#"
+def my_view(request):
+    pass
+"#;
+        assert!(run_check(&CsrfExempt, src).is_empty());
+    }
+
+    /// Webhook handlers legitimately need csrf_exempt — the check must be
+    /// suppressed when the function name contains "webhook".
+    #[test]
+    fn dj017_no_trigger_on_webhook_function() {
+        let src = r#"
+@csrf_exempt
+def stripe_webhook(request):
+    pass
+"#;
+        assert!(run_check(&CsrfExempt, src).is_empty());
+    }
+
+    /// The check is suppressed entirely for files that look like webhook/api
+    /// handlers (e.g. webhooks.py, api.py).
+    #[test]
+    fn dj017_skipped_in_webhook_file() {
+        let src = r#"
+@csrf_exempt
+def handle(request):
+    pass
+"#;
+        assert!(run_check_with_filename(&CsrfExempt, src, "payments/webhooks.py").is_empty());
+    }
+
+    // ── DJ018: RequestPostBoolCheck ───────────────────────────────────────
+
+    #[test]
+    fn dj018_triggers_on_if_request_post() {
+        let src = r#"
+if request.POST:
+    pass
+"#;
+        assert!(run_check(&RequestPostBoolCheck, src).contains(&"DJ018".to_string()));
+    }
+
+    #[test]
+    fn dj018_triggers_on_if_not_request_post() {
+        let src = r#"
+if not request.POST:
+    pass
+"#;
+        assert!(run_check(&RequestPostBoolCheck, src).contains(&"DJ018".to_string()));
+    }
+
+    #[test]
+    fn dj018_no_trigger_on_method_check() {
+        let src = r#"
+if request.method == "POST":
+    pass
+"#;
+        assert!(run_check(&RequestPostBoolCheck, src).is_empty());
+    }
+
+    // ── DJ019: CountGreaterThanZero ───────────────────────────────────────
+
+    #[test]
+    fn dj019_triggers_on_count_gt_zero() {
+        let src = r#"if MyModel.objects.count() > 0: pass"#;
+        assert!(run_check(&CountGreaterThanZero, src).contains(&"DJ019".to_string()));
+    }
+
+    #[test]
+    fn dj019_triggers_on_count_neq_zero() {
+        let src = r#"if MyModel.objects.count() != 0: pass"#;
+        assert!(run_check(&CountGreaterThanZero, src).contains(&"DJ019".to_string()));
+    }
+
+    #[test]
+    fn dj019_triggers_on_zero_lt_count() {
+        let src = r#"if 0 < MyModel.objects.count(): pass"#;
+        assert!(run_check(&CountGreaterThanZero, src).contains(&"DJ019".to_string()));
+    }
+
+    #[test]
+    fn dj019_no_trigger_on_exists() {
+        let src = r#"if MyModel.objects.filter(active=True).exists(): pass"#;
+        assert!(run_check(&CountGreaterThanZero, src).is_empty());
+    }
+
+    #[test]
+    fn dj019_no_trigger_on_count_gt_one() {
+        // count() > 1 is not equivalent to .exists() — do not flag it.
+        let src = r#"if MyModel.objects.count() > 1: pass"#;
+        assert!(run_check(&CountGreaterThanZero, src).is_empty());
+    }
+
+    // ── DJ020: SelectRelatedNoArgs ────────────────────────────────────────
+
+    #[test]
+    fn dj020_triggers_on_select_related_no_args() {
+        let src = r#"qs = MyModel.objects.select_related()"#;
+        assert!(run_check(&SelectRelatedNoArgs, src).contains(&"DJ020".to_string()));
+    }
+
+    #[test]
+    fn dj020_no_trigger_when_field_specified() {
+        let src = r#"qs = MyModel.objects.select_related("author")"#;
+        assert!(run_check(&SelectRelatedNoArgs, src).is_empty());
+    }
+
+    // ── DJ021: FloatFieldForMoney ─────────────────────────────────────────
+
+    #[test]
+    fn dj021_triggers_on_float_field_named_price() {
+        let src = r#"
+class Order(Model):
+    price = models.FloatField()
+"#;
+        assert!(run_check(&FloatFieldForMoney, src).contains(&"DJ021".to_string()));
+    }
+
+    #[test]
+    fn dj021_triggers_on_float_field_named_amount() {
+        let src = r#"
+class Invoice(Model):
+    amount = models.FloatField()
+"#;
+        assert!(run_check(&FloatFieldForMoney, src).contains(&"DJ021".to_string()));
+    }
+
+    #[test]
+    fn dj021_no_trigger_on_float_field_non_money_name() {
+        // "latitude" does not contain a money keyword — must not be flagged.
+        let src = r#"
+class Location(Model):
+    latitude = models.FloatField()
+"#;
+        assert!(run_check(&FloatFieldForMoney, src).is_empty());
+    }
+
+    #[test]
+    fn dj021_no_trigger_on_decimal_field_for_money() {
+        let src = r#"
+class Order(Model):
+    price = models.DecimalField(max_digits=10, decimal_places=2)
+"#;
+        assert!(run_check(&FloatFieldForMoney, src).is_empty());
+    }
+
+    // ── DJ022: MutableDefaultJsonField ────────────────────────────────────
+
+    #[test]
+    fn dj022_triggers_on_jsonfield_with_dict_default() {
+        let src = r#"data = models.JSONField(default={})"#;
+        assert!(run_check(&MutableDefaultJsonField, src).contains(&"DJ022".to_string()));
+    }
+
+    #[test]
+    fn dj022_triggers_on_jsonfield_with_list_default() {
+        let src = r#"tags = models.JSONField(default=[])"#;
+        assert!(run_check(&MutableDefaultJsonField, src).contains(&"DJ022".to_string()));
+    }
+
+    #[test]
+    fn dj022_no_trigger_when_using_callable_default() {
+        // default=dict is the recommended pattern — must not be flagged.
+        let src = r#"data = models.JSONField(default=dict)"#;
+        assert!(run_check(&MutableDefaultJsonField, src).is_empty());
+    }
+
+    #[test]
+    fn dj022_no_trigger_on_jsonfield_without_default() {
+        let src = r#"data = models.JSONField(null=True)"#;
+        assert!(run_check(&MutableDefaultJsonField, src).is_empty());
+    }
+
+    // ── DJ023: SignalWithoutDispatchUid ───────────────────────────────────
+
+    #[test]
+    fn dj023_triggers_on_receiver_without_dispatch_uid() {
+        let src = r#"
+@receiver(post_save, sender=User)
+def handle_user_save(sender, **kwargs):
+    pass
+"#;
+        assert!(run_check(&SignalWithoutDispatchUid, src).contains(&"DJ023".to_string()));
+    }
+
+    #[test]
+    fn dj023_no_trigger_when_dispatch_uid_present() {
+        let src = r#"
+@receiver(post_save, sender=User, dispatch_uid="handle_user_save")
+def handle_user_save(sender, **kwargs):
+    pass
+"#;
+        assert!(run_check(&SignalWithoutDispatchUid, src).is_empty());
+    }
+
+    #[test]
+    fn dj023_triggers_on_signal_connect_without_dispatch_uid() {
+        let src = r#"post_save.connect(handle_save)"#;
+        assert!(run_check(&SignalWithoutDispatchUid, src).contains(&"DJ023".to_string()));
+    }
+
+    #[test]
+    fn dj023_no_trigger_on_connect_with_dispatch_uid() {
+        let src = r#"post_save.connect(handle_save, dispatch_uid="my_uid")"#;
+        assert!(run_check(&SignalWithoutDispatchUid, src).is_empty());
+    }
+
+    // ── DJ024: UniqueTogetherDeprecated ───────────────────────────────────
+
+    #[test]
+    fn dj024_triggers_on_unique_together_in_meta() {
+        let src = r#"
+class MyModel(Model):
+    class Meta:
+        unique_together = [("field_a", "field_b")]
+"#;
+        assert!(run_check(&UniqueTogetherDeprecated, src).contains(&"DJ024".to_string()));
+    }
+
+    #[test]
+    fn dj024_no_trigger_without_unique_together() {
+        let src = r#"
+class MyModel(Model):
+    class Meta:
+        verbose_name = "my model"
+"#;
+        assert!(run_check(&UniqueTogetherDeprecated, src).is_empty());
+    }
+
+    /// unique_together outside a Model Meta must not be flagged.
+    #[test]
+    fn dj024_no_trigger_on_non_model_class() {
+        let src = r#"
+class SomeConfig:
+    unique_together = [("a", "b")]
+"#;
+        assert!(run_check(&UniqueTogetherDeprecated, src).is_empty());
+    }
+
+    // ── DJ025: IndexTogetherDeprecated ────────────────────────────────────
+
+    #[test]
+    fn dj025_triggers_on_index_together_in_meta() {
+        let src = r#"
+class Article(Model):
+    class Meta:
+        index_together = [["pub_date", "headline"]]
+"#;
+        assert!(run_check(&IndexTogetherDeprecated, src).contains(&"DJ025".to_string()));
+    }
+
+    #[test]
+    fn dj025_no_trigger_without_index_together() {
+        let src = r#"
+class Article(Model):
+    class Meta:
+        indexes = []
+"#;
+        assert!(run_check(&IndexTogetherDeprecated, src).is_empty());
+    }
+
+    // ── DJ026: SaveCreateInLoop ───────────────────────────────────────────
+
+    #[test]
+    fn dj026_triggers_on_save_in_for_loop() {
+        let src = r#"
+for item in items:
+    item.save()
+"#;
+        assert!(run_check(&SaveCreateInLoop, src).contains(&"DJ026".to_string()));
+    }
+
+    #[test]
+    fn dj026_triggers_on_objects_create_in_for_loop() {
+        let src = r#"
+for row in rows:
+    MyModel.objects.create(name=row["name"])
+"#;
+        assert!(run_check(&SaveCreateInLoop, src).contains(&"DJ026".to_string()));
+    }
+
+    /// The early-exit pattern (save then immediately return/break) executes the
+    /// save at most once per loop and must NOT be flagged.
+    #[test]
+    fn dj026_no_trigger_on_save_with_early_exit() {
+        let src = r#"
+for item in items:
+    if item.needs_update:
+        item.save()
+        return
+"#;
+        assert!(run_check(&SaveCreateInLoop, src).is_empty());
+    }
+
+    #[test]
+    fn dj026_no_trigger_on_save_with_break() {
+        let src = r#"
+for item in items:
+    if item.needs_update:
+        item.save()
+        break
+"#;
+        assert!(run_check(&SaveCreateInLoop, src).is_empty());
+    }
+
+    /// save() calls inside try/except blocks are error-handling patterns that
+    /// must not be flagged.
+    #[test]
+    fn dj026_no_trigger_on_save_in_try_block() {
+        let src = r#"
+for item in items:
+    try:
+        item.save()
+    except Exception:
+        pass
+"#;
+        assert!(run_check(&SaveCreateInLoop, src).is_empty());
+    }
+
+    /// Seed / fixture files intentionally create records in loops.
+    #[test]
+    fn dj026_skipped_in_seed_file() {
+        let src = r#"
+for row in data:
+    MyModel.objects.create(name=row["name"])
+"#;
+        assert!(run_check_with_filename(&SaveCreateInLoop, src, "db/seed_data.py").is_empty());
+    }
+
+    /// The check is suppressed inside test directories where per-row .save()
+    /// calls are a common and acceptable fixture-building pattern.
+    #[test]
+    fn dj026_skipped_in_tests_directory() {
+        let src = r#"
+for item in items:
+    item.save()
+"#;
+        assert!(
+            run_check_with_filename(&SaveCreateInLoop, src, "myapp/tests/test_views.py").is_empty()
+        );
+    }
+}
