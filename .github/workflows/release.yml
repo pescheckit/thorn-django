@@ -100,6 +100,7 @@ jobs:
       - name: Build
         env:
           PYO3_PYTHON: python${{ matrix.python }}
+          PYO3_CROSS_PYTHON_VERSION: ${{ matrix.python }}
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Package
