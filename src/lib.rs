@@ -160,10 +160,26 @@ impl Plugin for DjangoPlugin {
             }
 
             let graph_target = project_dir.join(".thorn/graph.json");
+
+            // Find our bundled Python module so the subprocess can import it
+            let python_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("python");
+            let extra_pythonpath = if python_dir.join("thorn_django").exists() {
+                python_dir.to_string_lossy().to_string()
+            } else {
+                String::new()
+            };
+            let current_pp = std::env::var("PYTHONPATH").unwrap_or_default();
+            let pythonpath = match (extra_pythonpath.is_empty(), current_pp.is_empty()) {
+                (true, _) => current_pp,
+                (false, true) => extra_pythonpath,
+                (false, false) => format!("{extra_pythonpath}:{current_pp}"),
+            };
+
             for python in &["python3", "python"] {
                 let ok = std::process::Command::new(python)
                     .args(["-m", "thorn_django", "--settings", settings])
                     .current_dir(project_dir)
+                    .env("PYTHONPATH", &pythonpath)
                     .stdout(std::process::Stdio::null())
                     .stderr(std::process::Stdio::null())
                     .status()
@@ -189,11 +205,13 @@ impl Plugin for DjangoPlugin {
             }
         }
 
-        // ── 5. Nothing worked ───────────────────────────────────────────────
+        // ── 5. Nothing worked — give helpful instructions ────────────────
+        let settings_hint = settings_module.as_deref().unwrap_or("myproject.settings");
         eprintln!(
-            "{} No .thorn/graph.json and no Django environment found.\n  \
-             Generate once: python -m thorn_django --settings myproject.settings\n  \
-             Or in Docker:  docker compose exec app python -m thorn_django",
+            "{} No model graph found. Generate once with:\n  \
+             python -m thorn_django --settings {settings_hint}\n  \
+             Or in Docker:\n  \
+             docker compose exec app python -m thorn_django --settings {settings_hint}",
             "!".yellow(),
         );
         InitResult::default()
