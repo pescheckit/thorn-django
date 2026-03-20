@@ -8,6 +8,9 @@ on:
 permissions:
   contents: write
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   test:
     name: Test
@@ -24,70 +27,311 @@ jobs:
       - run: cargo test
 
   build:
-    name: Build ${{ matrix.target }}
+    name: Build ${{ matrix.artifact }}
     needs: test
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
+          # Linux — one build per Python version so users can pick the tightest match
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            archive: thorn-django-linux-x86_64.tar.gz
+            python: "3.11"
+            artifact: thorn-django-py311-linux-x86_64
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            python: "3.12"
+            artifact: thorn-django-py312-linux-x86_64
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            python: "3.13"
+            artifact: thorn-django-py313-linux-x86_64
+          # macOS — system Python is sufficient; x86_64 cross-compiles from ARM runner
           - target: x86_64-apple-darwin
             os: macos-latest
-            archive: thorn-django-macos-x86_64.tar.gz
+            python: "3.12"
+            artifact: thorn-django-macos-x86_64
           - target: aarch64-apple-darwin
             os: macos-latest
-            archive: thorn-django-macos-aarch64.tar.gz
+            python: "3.12"
+            artifact: thorn-django-macos-aarch64
 
     steps:
       - uses: actions/checkout@v5
       - run: git clone --depth 1 https://github.com/pescheckit/thorn ../thorn
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Separate cache per matrix slot to avoid cross-contamination
+          key: ${{ matrix.artifact }}
+
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-      - name: Install build deps
+          python-version: ${{ matrix.python }}
+
+      # Python dev headers are bundled on macOS via setup-python; on Linux we
+      # need the explicit package.
+      - name: Install Python dev headers (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y python3-dev
-      - run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Build
+        env:
+          PYO3_PYTHON: python${{ matrix.python }}
+        run: cargo build --release --target ${{ matrix.target }}
+
       - name: Package
         run: |
-          cd target/${{ matrix.target }}/release
-          tar czf ../../../${{ matrix.archive }} thorn-django
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/thorn-django dist/${{ matrix.artifact }}
+          cd dist
+          tar czf ${{ matrix.artifact }}.tar.gz ${{ matrix.artifact }}
+
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.archive }}
-          path: ${{ matrix.archive }}
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}.tar.gz
 
-  release:
-    name: Create Release
+  package-deb:
+    name: Create .deb package
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/download-artifact@v4
+        with:
+          # The py311 binary is the best choice for the .deb: it runs on any
+          # Python >= 3.11 because PyO3 links against the stable ABI (abi3).
+          name: thorn-django-py311-linux-x86_64
+          path: dist/
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          # v0.1.1-alpha  →  0.1.1~alpha   (Debian tilde pre-release convention)
+          RAW="${GITHUB_REF_NAME#v}"
+          DEB_VERSION="$(echo "$RAW" | sed 's/-/~/g')"
+          echo "raw=${RAW}"           >> "$GITHUB_OUTPUT"
+          echo "deb=${DEB_VERSION}"   >> "$GITHUB_OUTPUT"
+
+      - name: Build .deb
+        env:
+          DEB_VERSION: ${{ steps.version.outputs.deb }}
+        run: |
+          PKG_DIR="thorn-django_${DEB_VERSION}_amd64"
+
+          install -d "${PKG_DIR}/DEBIAN"
+          install -d "${PKG_DIR}/usr/local/bin"
+
+          tar xzf dist/thorn-django-py311-linux-x86_64.tar.gz -C dist/
+          install -m 755 dist/thorn-django-py311-linux-x86_64 \
+            "${PKG_DIR}/usr/local/bin/thorn-django"
+
+          # dpkg-deb is strict: control fields must have no leading whitespace.
+          # Using printf avoids any shell-indentation leaking into the file.
+          printf '%s\n' \
+            "Package: thorn-django" \
+            "Version: ${DEB_VERSION}" \
+            "Section: devel" \
+            "Priority: optional" \
+            "Architecture: amd64" \
+            "Depends: python3 (>= 3.11)" \
+            "Maintainer: PesCheckIT <packages@pescheckit.github.io>" \
+            "Homepage: https://github.com/pescheckit/thorn-django" \
+            "Description: Fast Django/DRF linter with live model introspection" \
+            " Catches bugs, security issues, and performance problems by combining" \
+            " static AST analysis with runtime model graph validation. 57+ checks." \
+            > "${PKG_DIR}/DEBIAN/control"
+
+          dpkg-deb --build "${PKG_DIR}"
+          mv "${PKG_DIR}.deb" "thorn-django_${DEB_VERSION}_amd64.deb"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb-package
+          path: "thorn-django_*.deb"
+
+  publish-apt:
+    name: Publish to APT repository
+    needs: package-deb
+    runs-on: ubuntu-latest
+    # This job pushes to a separate GitHub Pages repo, which requires a PAT
+    # stored as GH_PAT (classic token with repo scope, or fine-grained token
+    # with Contents: write on pescheckit/pescheckit.github.io).
+    # The job is skipped gracefully if the secret is absent so forks and
+    # pull-request-triggered runs do not fail.
+    if: ${{ secrets.GH_PAT != '' }}
+    steps:
       - uses: actions/checkout@v5
+        with:
+          repository: pescheckit/pescheckit.github.io
+          token: ${{ secrets.GH_PAT }}
+          path: pages
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: deb-package
+          path: debs/
+
+      - name: Install APT tooling
+        run: sudo apt-get update && sudo apt-get install -y apt-utils dpkg-dev
+
+      - name: Import GPG key
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | base64 -d | \
+            gpg --batch --import
+          # Pre-trust the key so signing does not prompt
+          echo "4C60A1EE632E7B395E3A10B11D4C907F39FFB121:6:" | \
+            gpg --import-ownertrust
+
+      - name: Export public key
+        run: |
+          gpg --armor --export 4C60A1EE632E7B395E3A10B11D4C907F39FFB121 \
+            > pages/gpg.key
+
+      - name: Update APT repository
+        run: |
+          POOL="pages/apt/pool/main/t/thorn-django"
+          BINARY_DIR="pages/apt/dists/stable/main/binary-amd64"
+
+          install -d "$POOL"
+          install -d "$BINARY_DIR"
+
+          # Place new .deb (old versions remain in pool for pinning)
+          cp debs/*.deb "$POOL/"
+
+          # Generate plain-text Packages index from the pool root
+          cd pages/apt
+          dpkg-scanpackages --multiversion pool/ \
+            > dists/stable/main/binary-amd64/Packages
+          gzip -k -f dists/stable/main/binary-amd64/Packages
+
+          # Generate Release file with apt-ftparchive
+          cd dists/stable
+          apt-ftparchive \
+            -o APT::FTPArchive::Release::Origin="PesCheckIT" \
+            -o APT::FTPArchive::Release::Label="PesCheckIT" \
+            -o APT::FTPArchive::Release::Suite="stable" \
+            -o APT::FTPArchive::Release::Codename="stable" \
+            -o APT::FTPArchive::Release::Components="main" \
+            -o APT::FTPArchive::Release::Architectures="amd64" \
+            release . > Release
+
+          # Detached ASCII-armored signature (Release.gpg) and inline
+          # clearsigned variant (InRelease) — both are expected by apt.
+          gpg --batch --yes \
+            --local-user 4C60A1EE632E7B395E3A10B11D4C907F39FFB121 \
+            --armor --detach-sign \
+            -o Release.gpg Release
+          gpg --batch --yes \
+            --local-user 4C60A1EE632E7B395E3A10B11D4C907F39FFB121 \
+            --clearsign \
+            -o InRelease Release
+
+      - name: Write repository index page
+        run: |
+          cat > pages/index.html << 'HTML'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <title>PesCheckIT APT Repository</title>
+          </head>
+          <body>
+          <h1>PesCheckIT APT Repository</h1>
+          <p>Debian/Ubuntu packages for <strong>thorn-django</strong>.</p>
+          <pre>
+          # 1. Add the signing key
+          curl -fsSL https://pescheckit.github.io/gpg.key \
+            | sudo gpg --dearmor -o /usr/share/keyrings/pescheckit.gpg
+
+          # 2. Add the repository
+          echo "deb [signed-by=/usr/share/keyrings/pescheckit.gpg] \
+          https://pescheckit.github.io/apt stable main" \
+            | sudo tee /etc/apt/sources.list.d/pescheckit.list
+
+          # 3. Install
+          sudo apt update && sudo apt install thorn-django
+          </pre>
+          </body>
+          </html>
+          HTML
+
+      - name: Commit and push
+        run: |
+          cd pages
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          # --quiet on diff so the exit code drives the conditional commit
+          if ! git diff --cached --quiet; then
+            git commit -m "apt: publish thorn-django ${GITHUB_REF_NAME}"
+            git push
+          else
+            echo "No changes to publish."
+          fi
+
+  release:
+    name: Create GitHub Release
+    needs: [build, package-deb]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           body: |
-            ## Install
+            ## Install via APT (Debian / Ubuntu)
 
-            Download a binary below, or build from source:
             ```sh
-            cargo install --git https://github.com/pescheckit/thorn-django
+            # Add signing key
+            curl -fsSL https://pescheckit.github.io/gpg.key \
+              | sudo gpg --dearmor -o /usr/share/keyrings/pescheckit.gpg
+
+            # Add repository
+            echo "deb [signed-by=/usr/share/keyrings/pescheckit.gpg] \
+            https://pescheckit.github.io/apt stable main" \
+              | sudo tee /etc/apt/sources.list.d/pescheckit.list
+
+            sudo apt update && sudo apt install thorn-django
             ```
 
-            ## Usage
+            ## Install via binary download
+
             ```sh
-            thorn-django . --django-settings=myproject.settings
-            thorn-django . --check=fix
+            # Linux — Python 3.12
+            curl -fsSL https://github.com/pescheckit/thorn-django/releases/download/${{ github.ref_name }}/thorn-django-py312-linux-x86_64.tar.gz \
+              | tar xz
+            sudo mv thorn-django-py312-linux-x86_64 /usr/local/bin/thorn-django
+
+            # macOS (Apple Silicon)
+            curl -fsSL https://github.com/pescheckit/thorn-django/releases/download/${{ github.ref_name }}/thorn-django-macos-aarch64.tar.gz \
+              | tar xz
+            sudo mv thorn-django-macos-aarch64 /usr/local/bin/thorn-django
+            ```
+
+            ## Docker
+
+            ```dockerfile
+            ADD https://github.com/pescheckit/thorn-django/releases/download/${{ github.ref_name }}/thorn-django-py312-linux-x86_64.tar.gz /tmp/
+            RUN tar xzf /tmp/thorn-django-py312-linux-x86_64.tar.gz -C /usr/local/bin/ \
+                && mv /usr/local/bin/thorn-django-py312-linux-x86_64 /usr/local/bin/thorn-django \
+                && rm /tmp/*.tar.gz
+            ```
+
+            ## Build from source
+
+            ```sh
+            cargo install --git https://github.com/pescheckit/thorn-django
             ```
           files: artifacts/*
