@@ -27,13 +27,24 @@ def main():
         print("Error: DJANGO_SETTINGS_MODULE not set.", file=sys.stderr)
         sys.exit(1)
 
-    logging.disable(logging.WARNING)
-    import django
-    django.setup()
-    logging.disable(logging.NOTSET)
+    import warnings
 
-    graph = extract_graph()
-    diagnostics = run_dynamic_checks()
+    # Redirect stderr and suppress all logging/warnings BEFORE django.setup()
+    # because setup() triggers DRF view loading which logs noise.
+    _real_stderr = sys.stderr
+    sys.stderr = open(os.devnull, 'w')
+    logging.disable(logging.CRITICAL)
+    warnings.filterwarnings("ignore")
+
+    try:
+        import django
+        django.setup()
+        graph = extract_graph()
+        diagnostics = run_dynamic_checks()
+    finally:
+        sys.stderr.close()
+        sys.stderr = _real_stderr
+        logging.disable(logging.NOTSET)
     output = {"graph": graph, "diagnostics": diagnostics}
 
     if args.stdout:
