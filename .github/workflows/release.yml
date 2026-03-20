@@ -47,17 +47,17 @@ jobs:
             os: ubuntu-latest
             python: "3.13"
             artifact: thorn-django-py313-linux-x86_64
-          # Linux ARM
+          # Linux ARM (native ARM runners — no cross-compile)
           - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-24.04-arm
             python: "3.11"
             artifact: thorn-django-py311-linux-aarch64
           - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-24.04-arm
             python: "3.12"
             artifact: thorn-django-py312-linux-aarch64
           - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-24.04-arm
             python: "3.13"
             artifact: thorn-django-py313-linux-aarch64
           # macOS
@@ -90,24 +90,14 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update && sudo apt-get install -y python3-dev
-          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
-            sudo apt-get install -y gcc-aarch64-linux-gnu
-            echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
-          fi
 
       - name: Configure Python paths
         run: |
           echo "PYO3_PYTHON=python${{ matrix.python }}" >> $GITHUB_ENV
-          echo "PYO3_CROSS_PYTHON_VERSION=${{ matrix.python }}" >> $GITHUB_ENV
-          if [[ "${{ matrix.target }}" == aarch64* ]]; then
-            # Cross-compile: no host libpython available, use abi3 mode
-            echo "PYO3_NO_PYTHON=1" >> $GITHUB_ENV
-          else
-            # Native build: tell linker where libpython lives
-            PYTHON_PATH=$(python${{ matrix.python }} -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")
-            if [ -n "$PYTHON_PATH" ]; then
-              echo "RUSTFLAGS=-L ${PYTHON_PATH}" >> $GITHUB_ENV
-            fi
+          # Tell linker where libpython lives (setup-python path)
+          PYTHON_PATH=$(python${{ matrix.python }} -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")
+          if [ -n "$PYTHON_PATH" ]; then
+            echo "RUSTFLAGS=-L ${PYTHON_PATH}" >> $GITHUB_ENV
           fi
 
       - name: Build
