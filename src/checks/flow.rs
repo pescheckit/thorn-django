@@ -1000,7 +1000,7 @@ def my_func():
     fn dj050_no_error_for_unconditional_assignment_before_use() {
         let source = r#"
 def my_func():
-    value = compute()
+    value = len([1, 2, 3])
     return value
 "#;
         let codes = run_flow_check(source);
