@@ -158,6 +158,8 @@ def run_dynamic_checks():
     d.extend(_check_templates())
     d.extend(_check_dotted_path_settings())
     d.extend(_check_forms())
+    d.extend(_check_admin())
+    d.extend(_check_url_names())
     return d
 
 
@@ -331,6 +333,120 @@ def _check_dotted_path_settings():
                     "filename": "settings",
                 })
     return diags
+
+
+def _safe_source_file(cls):
+    """Get source file for a class, or module name as fallback."""
+    import inspect
+    try:
+        return os.path.relpath(inspect.getfile(cls))
+    except (TypeError, OSError):
+        return getattr(cls, '__module__', '')
+
+
+def _check_admin():
+    """DV701: Validate Django admin classes against their models."""
+    try:
+        from django.contrib.admin import site as admin_site
+    except ImportError:
+        return []
+    diags = []
+    for model, admin_class in admin_site._registry.items():
+        # Skip third-party admin classes — developers can't fix these
+        source = _safe_source_file(admin_class)
+        if _is_third_party(source):
+            continue
+
+        meta = model._meta
+        model_name = f"{meta.app_label}.{model.__name__}"
+        field_names = {f.name for f in meta.get_fields()}
+
+        # Check list_display
+        for field in getattr(admin_class, 'list_display', []):
+            if field == '__str__':
+                continue
+            if field in field_names:
+                continue
+            if hasattr(admin_class, field):  # admin method
+                continue
+            if hasattr(model, field):  # model method/property
+                continue
+            diags.append({
+                "code": "DV701", "range": None, "line": None, "col": None,
+                "message": f"Admin '{admin_class.__name__}' list_display references '{field}' which doesn't exist on model '{model_name}'.",
+                "filename": source,
+            })
+
+        # Check list_filter
+        for field in getattr(admin_class, 'list_filter', []):
+            if isinstance(field, (list, tuple)):
+                field = field[0]
+            if isinstance(field, str):
+                base = field.split('__')[0]
+                if base not in field_names and not hasattr(model, base):
+                    diags.append({
+                        "code": "DV701", "range": None, "line": None, "col": None,
+                        "message": f"Admin '{admin_class.__name__}' list_filter references '{field}' which doesn't exist on model '{model_name}'.",
+                        "filename": source,
+                    })
+
+        # Check search_fields
+        for field in getattr(admin_class, 'search_fields', []):
+            base = field.lstrip('^=@').split('__')[0]
+            if base not in field_names and not hasattr(model, base):
+                diags.append({
+                    "code": "DV701", "range": None, "line": None, "col": None,
+                    "message": f"Admin '{admin_class.__name__}' search_fields references '{field}' which doesn't exist on model '{model_name}'.",
+                    "filename": source,
+                })
+
+        # Check readonly_fields
+        for field in getattr(admin_class, 'readonly_fields', []):
+            if field in field_names:
+                continue
+            if hasattr(admin_class, field):
+                continue
+            if hasattr(model, field):
+                continue
+            diags.append({
+                "code": "DV701", "range": None, "line": None, "col": None,
+                "message": f"Admin '{admin_class.__name__}' readonly_fields references '{field}' which doesn't exist on model '{model_name}'.",
+                "filename": source,
+            })
+
+    return diags
+
+
+def _check_url_names():
+    """DV801: Check for duplicate URL names."""
+    from django.urls import get_resolver
+    diags = []
+    try:
+        resolver = get_resolver()
+        seen_names = {}
+        _walk_url_names(resolver, '', seen_names, diags)
+    except Exception:
+        pass
+    return diags
+
+
+def _walk_url_names(resolver, prefix, seen_names, diags):
+    for pattern in resolver.url_patterns:
+        if hasattr(pattern, 'url_patterns'):
+            ns = getattr(pattern, 'namespace', '') or ''
+            _walk_url_names(pattern, f"{prefix}{ns}:" if ns else prefix, seen_names, diags)
+        else:
+            name = getattr(pattern, 'name', None)
+            if name:
+                full_name = f"{prefix}{name}"
+                if full_name in seen_names:
+                    diags.append({
+                        "code": "DV801", "range": None, "line": None, "col": None,
+                        "message": f"Duplicate URL name '{full_name}' — also defined at {seen_names[full_name]}.",
+                        "filename": "urls",
+                    })
+                else:
+                    seen_names[full_name] = str(pattern.pattern)
 
 
 def _check_forms():

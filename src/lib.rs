@@ -271,6 +271,7 @@ impl Plugin for DjangoPlugin {
             Box::new(checks::ast::BadExceptOrder),
             Box::new(checks::ast::UsingConstantTest),
             Box::new(checks::ast::SelfAssigningVariable),
+            Box::new(checks::flow::PossiblyUsedBeforeAssignment),
         ];
 
         if !self.has_graph {
@@ -385,6 +386,7 @@ fn apply_dedup_and_filter(diagnostics: &mut Vec<Diagnostic>) {
                 && f != "migrations"
                 && f != "django.checks"
                 && f != "settings"
+                && f != "urls"
             {
                 return false;
             }
