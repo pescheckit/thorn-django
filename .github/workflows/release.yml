@@ -247,7 +247,7 @@ jobs:
           curl -fsSL https://pescheckit.github.io/thorn-django/gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/pescheckit.gpg
 
           # Add repository
-          echo "deb [signed-by=/usr/share/keyrings/pescheckit.gpg] https://pescheckit.github.io/thorn-django/apt stable main" | \
+          echo "deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/pescheckit.gpg] https://pescheckit.github.io/thorn-django/apt stable main" | \
             sudo tee /etc/apt/sources.list.d/thorn-django.list
 
           # Install
@@ -289,8 +289,8 @@ jobs:
               | sudo gpg --dearmor -o /usr/share/keyrings/pescheckit.gpg
 
             # Add repository
-            echo "deb [signed-by=/usr/share/keyrings/pescheckit.gpg] \
-            https://pescheckit.github.io/apt stable main" \
+            echo "deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/pescheckit.gpg] \
+            https://pescheckit.github.io/thorn-django/apt stable main" \
               | sudo tee /etc/apt/sources.list.d/pescheckit.list
 
             sudo apt update && sudo apt install thorn-django
