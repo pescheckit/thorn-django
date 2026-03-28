@@ -234,7 +234,7 @@ jobs:
         run: |
           gpg --armor --export > gh-pages/gpg.key
 
-      - name: Create index.html
+      - name: Create index pages
         run: |
           cat > gh-pages/index.html <<'HTMLEOF'
           <!DOCTYPE html>
@@ -257,6 +257,7 @@ jobs:
           </body>
           </html>
           HTMLEOF
+          cp gh-pages/index.html gh-pages/apt/index.html
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
