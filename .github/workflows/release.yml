@@ -20,7 +20,7 @@ jobs:
       - run: git clone --depth 1 https://github.com/pescheckit/thorn ../thorn
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: sudo apt-get update && sudo apt-get install -y python3-dev
@@ -82,7 +82,7 @@ jobs:
           # Separate cache per matrix slot to avoid cross-contamination
           key: ${{ matrix.artifact }}
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
 
@@ -110,7 +110,7 @@ jobs:
           cd dist
           tar czf ${{ matrix.artifact }}.tar.gz ${{ matrix.artifact }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: dist/${{ matrix.artifact }}.tar.gz
@@ -127,7 +127,7 @@ jobs:
           - arch: arm64
             binary: thorn-django-py311-linux-aarch64
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: ${{ matrix.binary }}
           path: dist/
@@ -168,7 +168,7 @@ jobs:
 
           dpkg-deb --build "${PKG_DIR}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: deb-${{ matrix.arch }}
           path: "*.deb"
@@ -195,7 +195,7 @@ jobs:
           fi
 
       - name: Download packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: packages
 
@@ -271,7 +271,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
