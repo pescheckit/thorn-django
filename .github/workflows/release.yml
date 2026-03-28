@@ -285,7 +285,7 @@ jobs:
 
             ```sh
             # Add signing key
-            curl -fsSL https://pescheckit.github.io/gpg.key \
+            curl -fsSL https://pescheckit.github.io/thorn-django/gpg.key \
               | sudo gpg --dearmor -o /usr/share/keyrings/pescheckit.gpg
 
             # Add repository
