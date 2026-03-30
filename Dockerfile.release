@@ -35,8 +35,7 @@ COPY --from=builder \
     /usr/local/bin/thorn-django
 
 # Include the Python helper for model graph extraction.
-COPY thorn-django/python /opt/thorn-django/python
-RUN pip install --no-cache-dir /opt/thorn-django/python
+COPY thorn-django/python/thorn_django /usr/local/lib/python3.11/site-packages/thorn_django
 
 # Run as non-root for security.
 RUN groupadd --gid 1000 thorn && \
