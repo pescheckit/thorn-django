@@ -1,10 +1,10 @@
 //! Cross-file import graph analysis: circular imports (DJ042) and unused
 //! Django-specific imports (DJ043).
 
-use thorn_api::visitor::{Visitor, walk_expr, walk_stmt};
-use thorn_api::ast::*;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use thorn_api::ast::*;
+use thorn_api::visitor::{walk_expr, walk_stmt, Visitor};
 use thorn_api::{Diagnostic, Level};
 
 // ── Data structures ───────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 //! Cross-referencing checks: combine AST analysis with the live AppGraph.
 
-use thorn_api::visitor::{Visitor, walk_expr, walk_stmt};
 use thorn_api::ast::*;
+use thorn_api::visitor::{walk_expr, walk_stmt, Visitor};
 use thorn_api::{AstCheck, CheckContext, Diagnostic};
 
 use super::common::text_range;

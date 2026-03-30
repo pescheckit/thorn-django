@@ -16,19 +16,79 @@ use thorn_api::ast::*;
 /// available in every Python scope without any import.
 const BUILTIN_FUNCTIONS_AND_CONSTANTS: &[&str] = &[
     // constants
-    "True", "False", "None", "NotImplemented", "Ellipsis",
+    "True",
+    "False",
+    "None",
+    "NotImplemented",
+    "Ellipsis",
     // type constructors
-    "bool", "int", "float", "complex", "str", "bytes", "bytearray",
-    "list", "tuple", "set", "frozenset", "dict", "type", "object",
-    "memoryview", "slice", "property", "classmethod", "staticmethod",
+    "bool",
+    "int",
+    "float",
+    "complex",
+    "str",
+    "bytes",
+    "bytearray",
+    "list",
+    "tuple",
+    "set",
+    "frozenset",
+    "dict",
+    "type",
+    "object",
+    "memoryview",
+    "slice",
+    "property",
+    "classmethod",
+    "staticmethod",
     // functions
-    "print", "len", "range", "enumerate", "zip", "map", "filter",
-    "sorted", "reversed", "iter", "next", "super", "isinstance",
-    "issubclass", "hasattr", "getattr", "setattr", "delattr",
-    "callable", "open", "input", "id", "hash", "repr", "abs",
-    "round", "min", "max", "sum", "all", "any", "pow", "divmod",
-    "hex", "oct", "bin", "ord", "chr", "vars", "dir", "locals",
-    "globals", "exec", "eval", "compile", "breakpoint", "format",
+    "print",
+    "len",
+    "range",
+    "enumerate",
+    "zip",
+    "map",
+    "filter",
+    "sorted",
+    "reversed",
+    "iter",
+    "next",
+    "super",
+    "isinstance",
+    "issubclass",
+    "hasattr",
+    "getattr",
+    "setattr",
+    "delattr",
+    "callable",
+    "open",
+    "input",
+    "id",
+    "hash",
+    "repr",
+    "abs",
+    "round",
+    "min",
+    "max",
+    "sum",
+    "all",
+    "any",
+    "pow",
+    "divmod",
+    "hex",
+    "oct",
+    "bin",
+    "ord",
+    "chr",
+    "vars",
+    "dir",
+    "locals",
+    "globals",
+    "exec",
+    "eval",
+    "compile",
+    "breakpoint",
+    "format",
 ];
 
 /// Return `true` when `name` looks like a Python built-in.
@@ -103,9 +163,14 @@ pub(crate) fn is_mutable_default(expr: &Expr) -> bool {
         };
         let lower = name.to_ascii_lowercase();
         // Match built-in mutable types and common container names generically
-        if lower == "list" || lower == "dict" || lower == "set" || lower == "bytearray"
-            || lower.contains("dict") || lower.contains("deque")
-            || lower.contains("counter") || lower.contains("array")
+        if lower == "list"
+            || lower == "dict"
+            || lower == "set"
+            || lower == "bytearray"
+            || lower.contains("dict")
+            || lower.contains("deque")
+            || lower.contains("counter")
+            || lower.contains("array")
         {
             return true;
         }

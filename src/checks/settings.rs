@@ -1,10 +1,10 @@
 //! Django settings checks with import resolution.
 
-use thorn_api::ast::*;
-use thorn_core::parser::parse_python;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use thorn_api::ast::*;
 use thorn_api::Diagnostic;
+use thorn_core::parser::parse_python;
 
 #[derive(Debug)]
 struct ResolvedSetting {
@@ -124,12 +124,9 @@ fn collect_settings(
                 if let Some(module_name) = &import.module {
                     let imports_star = import.names.iter().any(|a| a.name == "*");
                     if imports_star {
-                        if let Some(imported_file) = resolve_import(
-                            file,
-                            module_name,
-                            Some(import.level),
-                            project_dir,
-                        ) {
+                        if let Some(imported_file) =
+                            resolve_import(file, module_name, Some(import.level), project_dir)
+                        {
                             collect_settings(&imported_file, project_dir, settings, visited);
                         }
                     }

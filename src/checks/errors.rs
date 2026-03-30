@@ -4,8 +4,8 @@
 // dangerous defaults, redefined functions, duplicate dict keys, assert on
 // tuple, bare except, and raised NotImplemented.
 
-use thorn_api::visitor::{Visitor, walk_expr, walk_stmt};
 use thorn_api::ast::*;
+use thorn_api::visitor::{walk_expr, walk_stmt, Visitor};
 use thorn_api::{AstCheck, CheckContext, Diagnostic, Level};
 
 use super::common::{is_mutable_default, line_of_offset, text_range};
@@ -142,7 +142,10 @@ fn check_scope_for_redefined(
 fn has_overload_decorator(decorator_list: &[Expr]) -> bool {
     decorator_list.iter().any(|dec| match dec {
         Expr::Name(n) => {
-            matches!(n.id.as_str(), "overload" | "singledispatch" | "singledispatchmethod")
+            matches!(
+                n.id.as_str(),
+                "overload" | "singledispatch" | "singledispatchmethod"
+            )
         }
         Expr::Attribute(a) => {
             matches!(
@@ -205,12 +208,18 @@ impl<'a> Visitor for DuplicateDictKeyVisitor<'a> {
                             Expr::StringLiteral(s) => format!("'{}'", s.value),
                             Expr::NumberLiteral(n) => format!("{:?}", n.value),
                             Expr::BooleanLiteral(b) => {
-                                if b.value { "True".to_string() } else { "False".to_string() }
+                                if b.value {
+                                    "True".to_string()
+                                } else {
+                                    "False".to_string()
+                                }
                             }
                             Expr::NoneLiteral(_) => "None".to_string(),
                             _ => key_repr.clone(),
                         };
-                        if seen.contains_key(&key_repr) {
+                        if let std::collections::hash_map::Entry::Vacant(e) = seen.entry(key_repr) {
+                            e.insert(());
+                        } else {
                             self.diags.push(
                                 Diagnostic::new(
                                     "DJ054",
@@ -219,8 +228,6 @@ impl<'a> Visitor for DuplicateDictKeyVisitor<'a> {
                                 )
                                 .with_range(text_range(key_expr.range())),
                             );
-                        } else {
-                            seen.insert(key_repr, ());
                         }
                     }
                 }
@@ -376,8 +383,8 @@ impl<'a> Visitor for NotImplementedRaisedVisitor<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::common::test_helpers::run_check;
+    use super::*;
 
     // ── DJ051: DangerousDefaultValue ──────────────────────────────────────
 
@@ -385,70 +392,100 @@ mod tests {
     fn dj051_triggers_on_list_default() {
         let src = "def foo(x=[]):\n    pass\n";
         let codes = run_check(&DangerousDefaultValue, src);
-        assert!(codes.contains(&"DJ051".to_string()), "expected DJ051, got {codes:?}");
+        assert!(
+            codes.contains(&"DJ051".to_string()),
+            "expected DJ051, got {codes:?}"
+        );
     }
 
     #[test]
     fn dj051_triggers_on_dict_default() {
         let src = "def foo(x={}):\n    pass\n";
         let codes = run_check(&DangerousDefaultValue, src);
-        assert!(codes.contains(&"DJ051".to_string()), "expected DJ051, got {codes:?}");
+        assert!(
+            codes.contains(&"DJ051".to_string()),
+            "expected DJ051, got {codes:?}"
+        );
     }
 
     #[test]
     fn dj051_triggers_on_set_default() {
         let src = "def foo(x=set()):\n    pass\n";
         let codes = run_check(&DangerousDefaultValue, src);
-        assert!(codes.contains(&"DJ051".to_string()), "expected DJ051, got {codes:?}");
+        assert!(
+            codes.contains(&"DJ051".to_string()),
+            "expected DJ051, got {codes:?}"
+        );
     }
 
     #[test]
     fn dj051_triggers_on_list_call() {
         let src = "def foo(x=list()):\n    pass\n";
         let codes = run_check(&DangerousDefaultValue, src);
-        assert!(codes.contains(&"DJ051".to_string()), "expected DJ051, got {codes:?}");
+        assert!(
+            codes.contains(&"DJ051".to_string()),
+            "expected DJ051, got {codes:?}"
+        );
     }
 
     #[test]
     fn dj051_triggers_on_dict_call() {
         let src = "def foo(x=dict()):\n    pass\n";
         let codes = run_check(&DangerousDefaultValue, src);
-        assert!(codes.contains(&"DJ051".to_string()), "expected DJ051, got {codes:?}");
+        assert!(
+            codes.contains(&"DJ051".to_string()),
+            "expected DJ051, got {codes:?}"
+        );
     }
 
     #[test]
     fn dj051_triggers_on_defaultdict() {
         let src = "from collections import defaultdict\ndef foo(x=defaultdict(list)):\n    pass\n";
         let codes = run_check(&DangerousDefaultValue, src);
-        assert!(codes.contains(&"DJ051".to_string()), "expected DJ051, got {codes:?}");
+        assert!(
+            codes.contains(&"DJ051".to_string()),
+            "expected DJ051, got {codes:?}"
+        );
     }
 
     #[test]
     fn dj051_no_trigger_on_none_default() {
         let src = "def foo(x=None):\n    pass\n";
         let codes = run_check(&DangerousDefaultValue, src);
-        assert!(!codes.contains(&"DJ051".to_string()), "unexpected DJ051, got {codes:?}");
+        assert!(
+            !codes.contains(&"DJ051".to_string()),
+            "unexpected DJ051, got {codes:?}"
+        );
     }
 
     #[test]
     fn dj051_no_trigger_on_immutable_default() {
         let src = "def foo(x=42, y='hello', z=()):\n    pass\n";
         let codes = run_check(&DangerousDefaultValue, src);
-        assert!(!codes.contains(&"DJ051".to_string()), "unexpected DJ051, got {codes:?}");
+        assert!(
+            !codes.contains(&"DJ051".to_string()),
+            "unexpected DJ051, got {codes:?}"
+        );
     }
 
     #[test]
     fn dj051_triggers_on_kwonly_list() {
         let src = "def foo(*, opts=[]):\n    pass\n";
         let codes = run_check(&DangerousDefaultValue, src);
-        assert!(codes.contains(&"DJ051".to_string()), "expected DJ051, got {codes:?}");
+        assert!(
+            codes.contains(&"DJ051".to_string()),
+            "expected DJ051, got {codes:?}"
+        );
     }
 
     #[test]
     fn dj051_triggers_inside_method() {
         let src = "class Foo:\n    def bar(self, x={}):\n        pass\n";
         let codes = run_check(&DangerousDefaultValue, src);
-        assert!(codes.contains(&"DJ051".to_string()), "expected DJ051, got {codes:?}");
+        assert!(
+            codes.contains(&"DJ051".to_string()),
+            "expected DJ051, got {codes:?}"
+        );
     }
 
     // ── DJ052: FunctionRedefined ───────────────────────────────────────────
@@ -457,14 +494,20 @@ mod tests {
     fn dj052_triggers_on_redefined_function() {
         let src = "def foo():\n    pass\n\ndef foo():\n    pass\n";
         let codes = run_check(&FunctionRedefined, src);
-        assert!(codes.contains(&"DJ052".to_string()), "expected DJ052, got {codes:?}");
+        assert!(
+            codes.contains(&"DJ052".to_string()),
+            "expected DJ052, got {codes:?}"
+        );
     }
 
     #[test]
     fn dj052_no_trigger_on_unique_functions() {
         let src = "def foo():\n    pass\n\ndef bar():\n    pass\n";
         let codes = run_check(&FunctionRedefined, src);
-        assert!(!codes.contains(&"DJ052".to_string()), "unexpected DJ052, got {codes:?}");
+        assert!(
+            !codes.contains(&"DJ052".to_string()),
+            "unexpected DJ052, got {codes:?}"
+        );
     }
 
     #[test]
@@ -482,7 +525,10 @@ def process(x):
     return x
 "#;
         let codes = run_check(&FunctionRedefined, src);
-        assert!(!codes.contains(&"DJ052".to_string()), "unexpected DJ052, got {codes:?}");
+        assert!(
+            !codes.contains(&"DJ052".to_string()),
+            "unexpected DJ052, got {codes:?}"
+        );
     }
 
     #[test]
@@ -500,21 +546,30 @@ def process(x):
     return x
 "#;
         let codes = run_check(&FunctionRedefined, src);
-        assert!(!codes.contains(&"DJ052".to_string()), "unexpected DJ052, got {codes:?}");
+        assert!(
+            !codes.contains(&"DJ052".to_string()),
+            "unexpected DJ052, got {codes:?}"
+        );
     }
 
     #[test]
     fn dj052_triggers_class_redefined() {
         let src = "class Foo:\n    pass\n\nclass Foo:\n    pass\n";
         let codes = run_check(&FunctionRedefined, src);
-        assert!(codes.contains(&"DJ052".to_string()), "expected DJ052, got {codes:?}");
+        assert!(
+            codes.contains(&"DJ052".to_string()),
+            "expected DJ052, got {codes:?}"
+        );
     }
 
     #[test]
     fn dj052_no_trigger_same_name_different_scopes() {
         let src = "def helper():\n    pass\n\nclass Foo:\n    def helper(self):\n        pass\n";
         let codes = run_check(&FunctionRedefined, src);
-        assert!(!codes.contains(&"DJ052".to_string()), "unexpected DJ052, got {codes:?}");
+        assert!(
+            !codes.contains(&"DJ052".to_string()),
+            "unexpected DJ052, got {codes:?}"
+        );
     }
 
     // ── DJ054: DuplicateDictKey ────────────────────────────────────────────
@@ -523,35 +578,50 @@ def process(x):
     fn dj054_triggers_on_duplicate_string_key() {
         let src = "d = {'a': 1, 'b': 2, 'a': 3}\n";
         let codes = run_check(&DuplicateDictKey, src);
-        assert!(codes.contains(&"DJ054".to_string()), "expected DJ054, got {codes:?}");
+        assert!(
+            codes.contains(&"DJ054".to_string()),
+            "expected DJ054, got {codes:?}"
+        );
     }
 
     #[test]
     fn dj054_triggers_on_duplicate_int_key() {
         let src = "d = {1: 'a', 2: 'b', 1: 'c'}\n";
         let codes = run_check(&DuplicateDictKey, src);
-        assert!(codes.contains(&"DJ054".to_string()), "expected DJ054, got {codes:?}");
+        assert!(
+            codes.contains(&"DJ054".to_string()),
+            "expected DJ054, got {codes:?}"
+        );
     }
 
     #[test]
     fn dj054_no_trigger_on_unique_keys() {
         let src = "d = {'a': 1, 'b': 2, 'c': 3}\n";
         let codes = run_check(&DuplicateDictKey, src);
-        assert!(!codes.contains(&"DJ054".to_string()), "unexpected DJ054, got {codes:?}");
+        assert!(
+            !codes.contains(&"DJ054".to_string()),
+            "unexpected DJ054, got {codes:?}"
+        );
     }
 
     #[test]
     fn dj054_no_trigger_on_variable_keys() {
         let src = "d = {k1: 1, k2: 2}\n";
         let codes = run_check(&DuplicateDictKey, src);
-        assert!(!codes.contains(&"DJ054".to_string()), "unexpected DJ054, got {codes:?}");
+        assert!(
+            !codes.contains(&"DJ054".to_string()),
+            "unexpected DJ054, got {codes:?}"
+        );
     }
 
     #[test]
     fn dj054_triggers_on_duplicate_none_key() {
         let src = "d = {None: 1, None: 2}\n";
         let codes = run_check(&DuplicateDictKey, src);
-        assert!(codes.contains(&"DJ054".to_string()), "expected DJ054, got {codes:?}");
+        assert!(
+            codes.contains(&"DJ054".to_string()),
+            "expected DJ054, got {codes:?}"
+        );
     }
 
     // ── DJ057: AssertOnTuple ───────────────────────────────────────────────
@@ -560,28 +630,40 @@ def process(x):
     fn dj057_triggers_on_non_empty_tuple() {
         let src = "assert (x == 1, 'message')\n";
         let codes = run_check(&AssertOnTuple, src);
-        assert!(codes.contains(&"DJ057".to_string()), "expected DJ057, got {codes:?}");
+        assert!(
+            codes.contains(&"DJ057".to_string()),
+            "expected DJ057, got {codes:?}"
+        );
     }
 
     #[test]
     fn dj057_triggers_on_single_element_tuple() {
         let src = "assert (False,)\n";
         let codes = run_check(&AssertOnTuple, src);
-        assert!(codes.contains(&"DJ057".to_string()), "expected DJ057, got {codes:?}");
+        assert!(
+            codes.contains(&"DJ057".to_string()),
+            "expected DJ057, got {codes:?}"
+        );
     }
 
     #[test]
     fn dj057_no_trigger_on_plain_assert() {
         let src = "assert x == 1, 'message'\n";
         let codes = run_check(&AssertOnTuple, src);
-        assert!(!codes.contains(&"DJ057".to_string()), "unexpected DJ057, got {codes:?}");
+        assert!(
+            !codes.contains(&"DJ057".to_string()),
+            "unexpected DJ057, got {codes:?}"
+        );
     }
 
     #[test]
     fn dj057_no_trigger_on_empty_tuple() {
         let src = "assert ()\n";
         let codes = run_check(&AssertOnTuple, src);
-        assert!(!codes.contains(&"DJ057".to_string()), "unexpected DJ057, got {codes:?}");
+        assert!(
+            !codes.contains(&"DJ057".to_string()),
+            "unexpected DJ057, got {codes:?}"
+        );
     }
 
     // ── DJ060: BareExcept ─────────────────────────────────────────────────
@@ -590,28 +672,40 @@ def process(x):
     fn dj060_triggers_on_bare_except() {
         let src = "try:\n    pass\nexcept:\n    pass\n";
         let codes = run_check(&BareExcept, src);
-        assert!(codes.contains(&"DJ060".to_string()), "expected DJ060, got {codes:?}");
+        assert!(
+            codes.contains(&"DJ060".to_string()),
+            "expected DJ060, got {codes:?}"
+        );
     }
 
     #[test]
     fn dj060_no_trigger_on_typed_except() {
         let src = "try:\n    pass\nexcept Exception:\n    pass\n";
         let codes = run_check(&BareExcept, src);
-        assert!(!codes.contains(&"DJ060".to_string()), "unexpected DJ060, got {codes:?}");
+        assert!(
+            !codes.contains(&"DJ060".to_string()),
+            "unexpected DJ060, got {codes:?}"
+        );
     }
 
     #[test]
     fn dj060_no_trigger_on_specific_except() {
         let src = "try:\n    pass\nexcept ValueError:\n    pass\n";
         let codes = run_check(&BareExcept, src);
-        assert!(!codes.contains(&"DJ060".to_string()), "unexpected DJ060, got {codes:?}");
+        assert!(
+            !codes.contains(&"DJ060".to_string()),
+            "unexpected DJ060, got {codes:?}"
+        );
     }
 
     #[test]
     fn dj060_triggers_bare_among_typed() {
         let src = "try:\n    pass\nexcept ValueError:\n    pass\nexcept:\n    pass\n";
         let codes = run_check(&BareExcept, src);
-        assert!(codes.contains(&"DJ060".to_string()), "expected DJ060, got {codes:?}");
+        assert!(
+            codes.contains(&"DJ060".to_string()),
+            "expected DJ060, got {codes:?}"
+        );
     }
 
     // ── DJ062: NotImplementedRaised ───────────────────────────────────────
@@ -620,27 +714,39 @@ def process(x):
     fn dj062_triggers_on_raise_not_implemented() {
         let src = "def foo():\n    raise NotImplemented\n";
         let codes = run_check(&NotImplementedRaised, src);
-        assert!(codes.contains(&"DJ062".to_string()), "expected DJ062, got {codes:?}");
+        assert!(
+            codes.contains(&"DJ062".to_string()),
+            "expected DJ062, got {codes:?}"
+        );
     }
 
     #[test]
     fn dj062_no_trigger_on_raise_not_implemented_error() {
         let src = "def foo():\n    raise NotImplementedError\n";
         let codes = run_check(&NotImplementedRaised, src);
-        assert!(!codes.contains(&"DJ062".to_string()), "unexpected DJ062, got {codes:?}");
+        assert!(
+            !codes.contains(&"DJ062".to_string()),
+            "unexpected DJ062, got {codes:?}"
+        );
     }
 
     #[test]
     fn dj062_no_trigger_on_raise_value_error() {
         let src = "def foo():\n    raise ValueError('bad')\n";
         let codes = run_check(&NotImplementedRaised, src);
-        assert!(!codes.contains(&"DJ062".to_string()), "unexpected DJ062, got {codes:?}");
+        assert!(
+            !codes.contains(&"DJ062".to_string()),
+            "unexpected DJ062, got {codes:?}"
+        );
     }
 
     #[test]
     fn dj062_triggers_inside_method() {
         let src = "class Foo:\n    def bar(self):\n        raise NotImplemented\n";
         let codes = run_check(&NotImplementedRaised, src);
-        assert!(codes.contains(&"DJ062".to_string()), "expected DJ062, got {codes:?}");
+        assert!(
+            codes.contains(&"DJ062".to_string()),
+            "expected DJ062, got {codes:?}"
+        );
     }
 }

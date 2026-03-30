@@ -3,9 +3,9 @@
 // Checks for best practices: unreachable code, unused imports, unused
 // variables, redefined outer names, and comparison with callables.
 
-use thorn_api::visitor::{Visitor, walk_expr, walk_stmt};
-use thorn_api::ast::*;
 use std::collections::{HashMap, HashSet};
+use thorn_api::ast::*;
+use thorn_api::visitor::{walk_expr, walk_stmt, Visitor};
 use thorn_api::{AstCheck, CheckContext, Diagnostic, Level};
 
 use super::common::{is_type_checking_if, offset_to_line, text_range};
@@ -132,12 +132,8 @@ impl AstCheck for UnusedImport {
             }
             if !refs.contains(&name) {
                 diags.push(
-                    Diagnostic::new(
-                        "DJ055",
-                        format!("Unused import '{name}'."),
-                        ctx.filename,
-                    )
-                    .with_range(text_range(range)),
+                    Diagnostic::new("DJ055", format!("Unused import '{name}'."), ctx.filename)
+                        .with_range(text_range(range)),
                 );
             }
         }
@@ -149,7 +145,10 @@ impl AstCheck for UnusedImport {
 /// annotation (case-insensitive).
 fn line_has_noqa(source: &str, offset: u32) -> bool {
     let byte_offset = offset as usize;
-    let start = source[..byte_offset].rfind('\n').map(|p| p + 1).unwrap_or(0);
+    let start = source[..byte_offset]
+        .rfind('\n')
+        .map(|p| p + 1)
+        .unwrap_or(0);
     let end = source[byte_offset..]
         .find('\n')
         .map(|p| byte_offset + p)
@@ -178,9 +177,7 @@ fn collect_imports_at_module_level(
                         .asname
                         .as_ref()
                         .map(|n| n.to_string())
-                        .unwrap_or_else(|| {
-                            alias.name.split('.').next().unwrap_or("").to_string()
-                        });
+                        .unwrap_or_else(|| alias.name.split('.').next().unwrap_or("").to_string());
                     out.push((local, s.range(), noqa));
                 }
             }
@@ -214,13 +211,7 @@ fn collect_imports_at_module_level(
                 let in_tc = is_type_checking_if(s);
                 collect_imports_at_module_level(&s.body, source, out, all_names, in_tc);
                 for clause in &s.elif_else_clauses {
-                    collect_imports_at_module_level(
-                        &clause.body,
-                        source,
-                        out,
-                        all_names,
-                        false,
-                    );
+                    collect_imports_at_module_level(&clause.body, source, out, all_names, false);
                 }
             }
             _ => {}
@@ -443,13 +434,9 @@ fn analyze_unused_vars_in_function(
                 continue;
             }
             diags.push(
-                Diagnostic::new(
-                    "DJ056",
-                    format!("Unused variable '{name}'."),
-                    filename,
-                )
-                .with_range(text_range(*range))
-                .with_level(Level::All),
+                Diagnostic::new("DJ056", format!("Unused variable '{name}'."), filename)
+                    .with_range(text_range(*range))
+                    .with_level(Level::All),
             );
         }
     }
@@ -647,9 +634,7 @@ struct ModuleName {
     is_decorated_function: bool,
 }
 
-fn collect_module_scope_names(
-    body: &[Stmt],
-) -> HashMap<String, ModuleName> {
+fn collect_module_scope_names(body: &[Stmt]) -> HashMap<String, ModuleName> {
     let mut names: HashMap<String, ModuleName> = HashMap::new();
     for stmt in body {
         match stmt {
@@ -659,9 +644,7 @@ fn collect_module_scope_names(
                         .asname
                         .as_ref()
                         .map(|n| n.to_string())
-                        .unwrap_or_else(|| {
-                            alias.name.split('.').next().unwrap_or("").to_string()
-                        });
+                        .unwrap_or_else(|| alias.name.split('.').next().unwrap_or("").to_string());
                     names.entry(name).or_insert(ModuleName {
                         range: s.range(),
                         is_decorated_function: false,
@@ -746,8 +729,7 @@ fn check_function_for_redefined(
                         if outer.is_decorated_function {
                             continue;
                         }
-                        let outer_line =
-                            offset_to_line(source, outer.range.start as usize);
+                        let outer_line = offset_to_line(source, outer.range.start as usize);
                         diags.push(
                             Diagnostic::new(
                                 "DJ058",
@@ -772,12 +754,13 @@ fn check_function_for_redefined(
                     continue;
                 }
                 if let Some(outer) = module_names.get(name) {
-                    let outer_line =
-                        offset_to_line(source, outer.range.start as usize);
+                    let outer_line = offset_to_line(source, outer.range.start as usize);
                     diags.push(
                         Diagnostic::new(
                             "DJ058",
-                            format!("Redefining name '{name}' from outer scope (line {outer_line})."),
+                            format!(
+                                "Redefining name '{name}' from outer scope (line {outer_line})."
+                            ),
                             filename,
                         )
                         .with_range(text_range(*range))
@@ -813,27 +796,16 @@ fn should_skip_redefined_name(name: &str) -> bool {
     name.starts_with('_') || name == "self" || name == "cls"
 }
 
-fn collect_all_param_names_with_range(
-    params: &Parameters,
-) -> Vec<(String, thorn_api::ByteRange)> {
+fn collect_all_param_names_with_range(params: &Parameters) -> Vec<(String, thorn_api::ByteRange)> {
     let mut out = vec![];
     for p in &params.posonlyargs {
-        out.push((
-            p.name.as_str().to_string(),
-            p.range(),
-        ));
+        out.push((p.name.as_str().to_string(), p.range()));
     }
     for p in &params.args {
-        out.push((
-            p.name.as_str().to_string(),
-            p.range(),
-        ));
+        out.push((p.name.as_str().to_string(), p.range()));
     }
     for p in &params.kwonlyargs {
-        out.push((
-            p.name.as_str().to_string(),
-            p.range(),
-        ));
+        out.push((p.name.as_str().to_string(), p.range()));
     }
     if let Some(v) = &params.vararg {
         out.push((v.name.as_str().to_string(), v.range()));
@@ -928,10 +900,7 @@ impl<'a> Visitor for ComparisonWithCallableVisitor<'a> {
     }
 }
 
-fn callable_name_in_expr<'a>(
-    expr: &Expr,
-    func_names: &'a HashSet<String>,
-) -> Option<&'a str> {
+fn callable_name_in_expr<'a>(expr: &Expr, func_names: &'a HashSet<String>) -> Option<&'a str> {
     if let Expr::Name(n) = expr {
         let name = n.id.as_str();
         if func_names.contains(name) {
@@ -956,8 +925,8 @@ fn is_callable_or_none(expr: &Expr, func_names: &HashSet<String>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::common::test_helpers::{run_check, run_check_filename};
+    use super::*;
 
     // ── DJ064: UnreachableCode ────────────────────────────────────────────
 

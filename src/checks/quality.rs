@@ -4,8 +4,8 @@
 // exception handling, forgotten debug statements, singleton comparisons,
 // and verbose super() calls.
 
-use thorn_api::visitor::{Visitor, walk_expr, walk_stmt};
 use thorn_api::ast::*;
+use thorn_api::visitor::{walk_expr, walk_stmt, Visitor};
 use thorn_api::{AstCheck, CheckContext, Diagnostic};
 
 use super::common::{is_builtin, text_range};
@@ -410,7 +410,8 @@ impl<'a> Visitor for SingletonComparisonVisitor<'a> {
 
                 if let Some(msg) = singleton_message(lhs, rhs) {
                     self.diags.push(
-                        Diagnostic::new("DJ065", msg, self.filename).with_range(text_range(cmp.range())),
+                        Diagnostic::new("DJ065", msg, self.filename)
+                            .with_range(text_range(cmp.range())),
                     );
                 }
             }
@@ -425,9 +426,7 @@ fn singleton_message(lhs: &Expr, rhs: &Expr) -> Option<&'static str> {
 
     let kind = lhs_kind.or(rhs_kind)?;
     Some(match kind {
-        SingletonKind::None => {
-            "Use 'is None' / 'is not None' instead of '== None' / '!= None'."
-        }
+        SingletonKind::None => "Use 'is None' / 'is not None' instead of '== None' / '!= None'.",
         SingletonKind::Bool => {
             "Use 'is True'/'is False' or test the value directly instead of '== True'/'== False'."
         }
@@ -531,8 +530,8 @@ impl<'a> Visitor for SuperWithArgumentsVisitor<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::common::test_helpers::run_check;
+    use super::*;
 
     // ── DJ053: PointlessStatement ─────────────────────────────────────────
 

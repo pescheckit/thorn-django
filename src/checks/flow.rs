@@ -9,8 +9,8 @@
 // intentionally (too many false positives from conditional imports and class
 // attributes).
 
-use thorn_api::ast::*;
 use std::collections::HashSet;
+use thorn_api::ast::*;
 use thorn_api::{AstCheck, CheckContext, Diagnostic};
 
 use super::common::{is_builtin, text_range};

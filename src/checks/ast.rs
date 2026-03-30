@@ -1,5 +1,5 @@
-use thorn_api::visitor::{Visitor, walk_expr, walk_stmt};
 use thorn_api::ast::*;
+use thorn_api::visitor::{walk_expr, walk_stmt, Visitor};
 use thorn_api::{AstCheck, CheckContext, Diagnostic};
 
 use super::common::{has_null_true, has_unique_true, is_django_model, is_model_form, text_range};
@@ -2048,7 +2048,7 @@ impl AstCheck for DjangoValidationErrorInDRF {
 
         for stmt in &ctx.module.body {
             if let Stmt::ImportFrom(imp) = stmt {
-                let module = imp.module.as_ref().map(|m| m.as_str()).unwrap_or("");
+                let module = imp.module.as_deref().unwrap_or("");
                 if module == "django.core.exceptions" {
                     for alias in &imp.names {
                         if alias.name.as_str() == "ValidationError" {
@@ -2484,7 +2484,7 @@ impl AstCheck for ImportedAuthUser {
         let mut diags = Vec::new();
         for stmt in &ctx.module.body {
             if let Stmt::ImportFrom(imp) = stmt {
-                let module = imp.module.as_ref().map(|m| m.as_str()).unwrap_or("");
+                let module = imp.module.as_deref().unwrap_or("");
                 if module == "django.contrib.auth.models" {
                     let imports_user = imp.names.iter().any(|alias| alias.name.as_str() == "User");
                     if imports_user {

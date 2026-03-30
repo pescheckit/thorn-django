@@ -15,7 +15,7 @@ fn make_model(name: &str, fields: Vec<Field>, relations: Vec<Relation>) -> Model
     Model {
         app_label: "test".into(),
         name: name.into(),
-        db_table: name.to_lowercase().into(),
+        db_table: name.to_lowercase(),
         module: "test.models".into(),
         source_file: "test/models.py".into(),
         abstract_model: false,
