@@ -2432,6 +2432,17 @@ struct HardCodedAuthUserVisitor<'a> {
 
 impl<'a> Visitor<'_> for HardCodedAuthUserVisitor<'a> {
     fn visit_expr(&mut self, expr: &Expr) {
+        // Skip the default (3rd) argument of any `getattr()` call — a fallback
+        // value is not a hard-coded reference being actively used.
+        if let Expr::Call(call) = expr {
+            if Self::is_getattr_with_default(call) {
+                for arg in call.arguments.args.iter().take(2) {
+                    self.visit_expr(arg);
+                }
+                return;
+            }
+        }
+
         if let Expr::StringLiteral(s) = expr {
             if s.value.to_str() == "auth.User" {
                 self.diags.push(
@@ -2445,6 +2456,14 @@ impl<'a> Visitor<'_> for HardCodedAuthUserVisitor<'a> {
             }
         }
         visitor::walk_expr(self, expr);
+    }
+}
+
+impl<'a> HardCodedAuthUserVisitor<'a> {
+    /// Returns `true` when `call` is `getattr(obj, attr, default)` (3+ args).
+    fn is_getattr_with_default(call: &ruff_python_ast::ExprCall) -> bool {
+        call.arguments.args.len() >= 3
+            && matches!(call.func.as_ref(), Expr::Name(n) if n.id.as_str() == "getattr")
     }
 }
 

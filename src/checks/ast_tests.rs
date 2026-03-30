@@ -1277,6 +1277,19 @@ name = "auth.Permission"
     );
 }
 
+#[test]
+fn e5141_no_trigger_getattr_auth_user_model_default() {
+    let src = r#"
+auth_user_model = getattr(settings, "AUTH_USER_MODEL", "auth.User")
+"#;
+    let codes = run_check(&HardCodedAuthUser, src);
+    assert!(
+        !codes.contains(&"E5141".to_string()),
+        "unexpected E5141 for getattr AUTH_USER_MODEL default, got {:?}",
+        codes
+    );
+}
+
 // ── E5142: ImportedAuthUser ───────────────────────────────────────────────
 
 #[test]
