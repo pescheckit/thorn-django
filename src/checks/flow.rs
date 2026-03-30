@@ -9,182 +9,11 @@
 // intentionally (too many false positives from conditional imports and class
 // attributes).
 
-use ruff_python_ast::*;
-use ruff_text_size::Ranged;
+use thorn_api::ast::*;
 use std::collections::HashSet;
 use thorn_api::{AstCheck, CheckContext, Diagnostic};
 
-// ── Python built-in names we never flag ──────────────────────────────────
-
-const BUILTINS: &[&str] = &[
-    // constants
-    "True",
-    "False",
-    "None",
-    "NotImplemented",
-    "Ellipsis",
-    "__debug__",
-    "__name__",
-    "__file__",
-    "__doc__",
-    "__package__",
-    "__spec__",
-    "__loader__",
-    "__builtins__",
-    "__all__",
-    "__version__",
-    "__author__",
-    "__annotations__",
-    "__dict__",
-    "__slots__",
-    "__class__",
-    // common builtins
-    "print",
-    "len",
-    "range",
-    "enumerate",
-    "zip",
-    "map",
-    "filter",
-    "sorted",
-    "reversed",
-    "list",
-    "dict",
-    "set",
-    "tuple",
-    "str",
-    "int",
-    "float",
-    "bool",
-    "bytes",
-    "bytearray",
-    "type",
-    "object",
-    "super",
-    "isinstance",
-    "issubclass",
-    "hasattr",
-    "getattr",
-    "setattr",
-    "delattr",
-    "callable",
-    "iter",
-    "next",
-    "open",
-    "input",
-    "id",
-    "hash",
-    "repr",
-    "abs",
-    "round",
-    "min",
-    "max",
-    "sum",
-    "all",
-    "any",
-    "pow",
-    "divmod",
-    "hex",
-    "oct",
-    "bin",
-    "ord",
-    "chr",
-    "vars",
-    "dir",
-    "locals",
-    "globals",
-    "exec",
-    "eval",
-    "compile",
-    "breakpoint",
-    "format",
-    "staticmethod",
-    "classmethod",
-    "property",
-    "slice",
-    "memoryview",
-    "frozenset",
-    "complex",
-    "NotImplementedError",
-    "Exception",
-    "ValueError",
-    "TypeError",
-    "AttributeError",
-    "KeyError",
-    "IndexError",
-    "RuntimeError",
-    "StopIteration",
-    "StopAsyncIteration",
-    "GeneratorExit",
-    "SystemExit",
-    "KeyboardInterrupt",
-    "OSError",
-    "IOError",
-    "FileNotFoundError",
-    "PermissionError",
-    "ImportError",
-    "ModuleNotFoundError",
-    "NameError",
-    "UnboundLocalError",
-    "RecursionError",
-    "OverflowError",
-    "ZeroDivisionError",
-    "FloatingPointError",
-    "ArithmeticError",
-    "LookupError",
-    "MemoryError",
-    "BufferError",
-    "AssertionError",
-    "UnicodeError",
-    "UnicodeDecodeError",
-    "UnicodeEncodeError",
-    "UnicodeTranslateError",
-    "SyntaxError",
-    "IndentationError",
-    "TabError",
-    "SystemError",
-    "ReferenceError",
-    "EOFError",
-    "ConnectionError",
-    "BrokenPipeError",
-    "ConnectionAbortedError",
-    "ConnectionRefusedError",
-    "ConnectionResetError",
-    "BlockingIOError",
-    "ChildProcessError",
-    "FileExistsError",
-    "IsADirectoryError",
-    "NotADirectoryError",
-    "InterruptedError",
-    "ProcessLookupError",
-    "TimeoutError",
-    "Warning",
-    "DeprecationWarning",
-    "PendingDeprecationWarning",
-    "RuntimeWarning",
-    "SyntaxWarning",
-    "ResourceWarning",
-    "FutureWarning",
-    "ImportWarning",
-    "UnicodeWarning",
-    "BytesWarning",
-    "UserWarning",
-    "BaseException",
-    "BaseExceptionGroup",
-    "ExceptionGroup",
-    "enumerate",
-    "zip",
-    "map",
-    "reversed",
-    "NotImplemented",
-    // self/cls are always OK
-    "self",
-    "cls",
-];
-
-fn is_builtin(name: &str) -> bool {
-    BUILTINS.contains(&name)
-}
+use super::common::{is_builtin, text_range};
 
 // ── Public check ─────────────────────────────────────────────────────────
 
@@ -270,8 +99,7 @@ fn collect_module_level_names(body: &[Stmt]) -> HashSet<String> {
             Stmt::Try(try_stmt) => {
                 collect_module_level_names_from_body(&try_stmt.body, &mut names);
                 for handler in &try_stmt.handlers {
-                    let ExceptHandler::ExceptHandler(h) = handler;
-                    collect_module_level_names_from_body(&h.body, &mut names);
+                    collect_module_level_names_from_body(&handler.body, &mut names);
                 }
             }
             _ => {}
@@ -375,8 +203,7 @@ fn visit_stmt_for_functions(
                 visit_stmt_for_functions(s, filename, module_names, diags);
             }
             for handler in &s.handlers {
-                let ExceptHandler::ExceptHandler(eh) = handler;
-                for s in &eh.body {
+                for s in &handler.body {
                     visit_stmt_for_functions(s, filename, module_names, diags);
                 }
             }
@@ -411,15 +238,15 @@ fn analyze_function(
 fn collect_params(params: &Parameters, defined: &mut HashSet<String>) {
     // positional-only args
     for p in &params.posonlyargs {
-        defined.insert(p.parameter.name.as_str().to_string());
+        defined.insert(p.name.as_str().to_string());
     }
     // regular args
     for p in &params.args {
-        defined.insert(p.parameter.name.as_str().to_string());
+        defined.insert(p.name.as_str().to_string());
     }
     // keyword-only args
     for p in &params.kwonlyargs {
-        defined.insert(p.parameter.name.as_str().to_string());
+        defined.insert(p.name.as_str().to_string());
     }
     // *args
     if let Some(vararg) = &params.vararg {
@@ -582,12 +409,31 @@ fn analyze_stmt(
                 }
 
                 if has_else {
-                    // All branches are covered → intersection is guaranteed
-                    let mut intersection = branch_defined_sets[0].clone();
-                    for set in &branch_defined_sets[1..] {
-                        intersection.retain(|k| set.contains(k));
+                    // All branches are covered. But branches that always
+                    // terminate (return/raise) never reach code after the if,
+                    // so exclude them from the intersection.
+                    let mut all_bodies: Vec<&[Stmt]> = vec![&s.body];
+                    for clause in &s.elif_else_clauses {
+                        all_bodies.push(&clause.body);
                     }
-                    *defined = intersection;
+                    let non_terminating: Vec<&HashSet<String>> = branch_defined_sets
+                        .iter()
+                        .zip(all_bodies.iter())
+                        .filter(|(_, body)| !body_always_terminates(body))
+                        .map(|(set, _)| set)
+                        .collect();
+
+                    if non_terminating.is_empty() {
+                        // Every branch terminates — code after is unreachable,
+                        // keep pre_if to avoid false positives
+                        *defined = pre_if;
+                    } else {
+                        let mut intersection = non_terminating[0].clone();
+                        for set in &non_terminating[1..] {
+                            intersection.retain(|k| set.contains(k));
+                        }
+                        *defined = intersection;
+                    }
                 } else {
                     // No else → not all paths covered; keep only pre-if
                     *defined = pre_if;
@@ -597,38 +443,75 @@ fn analyze_stmt(
 
         // ── try/except/finally ────────────────────────────────────────────
         //
-        // Variables assigned in the try body are NOT guaranteed (an exception
-        // might skip them). Variables in the finally block ARE guaranteed.
-        // Variables in handlers are NOT guaranteed (handler may not run).
+        // Key insight: with NO except handlers (bare try/finally), any
+        // exception propagates through finally and code after the try
+        // never runs — so try-body assignments ARE safe for subsequent code.
+        // With except handlers, the try body may be interrupted, so we
+        // intersect try + handler outcomes.
         Stmt::Try(s) => {
             let pre_try = defined.clone();
 
-            // Analyze try body — but assignments there are NOT guaranteed
+            // Analyze try body
             let mut try_defined = defined.clone();
             analyze_body(&s.body, &mut try_defined, filename, diags);
 
-            // Analyze each except handler
-            for handler in &s.handlers {
-                let ExceptHandler::ExceptHandler(eh) = handler;
-                let mut handler_defined = pre_try.clone();
-                // The `as e` variable is defined within the handler
-                if let Some(name) = &eh.name {
-                    handler_defined.insert(name.as_str().to_string());
+            // Save try-completed state for the else clause
+            let try_completed = try_defined.clone();
+
+            if s.handlers.is_empty() {
+                // No except handlers (bare try/finally): if the try body
+                // throws, the exception propagates past finally and code
+                // after doesn't run. So try-body assignments are safe.
+                *defined = try_defined;
+            } else {
+                // With except handlers: analyze each handler
+                let mut handler_sets = Vec::new();
+                let mut all_handlers_terminate = true;
+
+                for handler in &s.handlers {
+                    let mut handler_defined = pre_try.clone();
+                    if let Some(name) = &handler.name {
+                        handler_defined.insert(name.as_str().to_string());
+                    }
+                    if let Some(exc_type) = &handler.type_ {
+                        check_expr(exc_type, &handler_defined, filename, diags);
+                    }
+                    analyze_body(&handler.body, &mut handler_defined, filename, diags);
+                    if !body_always_terminates(&handler.body) {
+                        all_handlers_terminate = false;
+                    }
+                    handler_sets.push(handler_defined);
                 }
-                if let Some(exc_type) = &eh.type_ {
-                    check_expr(exc_type, &handler_defined, filename, diags);
+
+                if all_handlers_terminate {
+                    // Every except handler returns/raises/etc., so only the
+                    // try-completion path reaches code after the try block.
+                    // Try-body assignments are therefore safe.
+                    *defined = try_defined;
+                } else {
+                    // Intersect try-completion + non-terminating handlers
+                    let mut branch_sets = vec![try_defined];
+                    for (i, hs) in handler_sets.into_iter().enumerate() {
+                        if !body_always_terminates(&s.handlers[i].body) {
+                            branch_sets.push(hs);
+                        }
+                    }
+                    if let Some(first) = branch_sets.first() {
+                        *defined = first
+                            .iter()
+                            .filter(|name| branch_sets.iter().all(|s| s.contains(*name)))
+                            .cloned()
+                            .collect();
+                    }
                 }
-                analyze_body(&eh.body, &mut handler_defined, filename, diags);
             }
 
-            // orelse (try...else) runs only if try completed without exception
-            // Treat it like the try body (conservative)
-            let mut else_defined = pre_try.clone();
+            // else clause runs only if try completed without exception
+            let mut else_defined = try_completed;
             analyze_body(&s.orelse, &mut else_defined, filename, diags);
 
             // finally always runs → its assignments ARE guaranteed
             analyze_body(&s.finalbody, defined, filename, diags);
-            // Assignments from try/except/else are NOT guaranteed; only finally propagates
         }
 
         // ── with ... as x ────────────────────────────────────────────────
@@ -685,13 +568,13 @@ fn analyze_stmt(
         Stmt::FunctionDef(f) => {
             // Check decorators in the current scope
             for dec in &f.decorator_list {
-                check_expr(&dec.expression, defined, filename, diags);
+                check_expr(dec, defined, filename, diags);
             }
             defined.insert(f.name.as_str().to_string());
         }
         Stmt::ClassDef(cls) => {
             for dec in &cls.decorator_list {
-                check_expr(&dec.expression, defined, filename, diags);
+                check_expr(dec, defined, filename, diags);
             }
             defined.insert(cls.name.as_str().to_string());
         }
@@ -716,7 +599,7 @@ fn check_expr(expr: &Expr, defined: &HashSet<String>, filename: &str, diags: &mu
                         format!("'{name}' may be used before assignment"),
                         filename,
                     )
-                    .with_range(n.range())
+                    .with_range(text_range(n.range()))
                     .with_level(thorn_api::Level::Fix),
                 );
             }
@@ -813,14 +696,10 @@ fn check_expr(expr: &Expr, defined: &HashSet<String>, filename: &str, diags: &mu
         }
         Expr::FString(e) => {
             // Walk interpolated expressions inside f-strings
-            for part in &e.value {
+            for part in &e.parts {
                 match part {
-                    FStringPart::FString(inner) => {
-                        for inner_part in &inner.elements {
-                            if let ruff_python_ast::FStringElement::Expression(fv) = inner_part {
-                                check_expr(&fv.expression, defined, filename, diags);
-                            }
-                        }
+                    FStringPart::Expression(fexpr) => {
+                        check_expr(&fexpr.value, defined, filename, diags);
                     }
                     FStringPart::Literal(_) => {}
                 }
@@ -840,9 +719,36 @@ fn check_expr(expr: &Expr, defined: &HashSet<String>, filename: &str, diags: &mu
         | Expr::BooleanLiteral(_)
         | Expr::NoneLiteral(_)
         | Expr::EllipsisLiteral(_) => {}
+    }
+}
 
-        // IpyEscapeCommand and other non-standard nodes
-        _ => {}
+/// Return `true` if the last statement in `body` always terminates the
+/// current scope (return, raise, break, continue). Used to detect except
+/// handlers that never fall through — if ALL handlers terminate, only the
+/// try-completion path can reach subsequent code.
+fn body_always_terminates(body: &[Stmt]) -> bool {
+    match body.last() {
+        Some(Stmt::Return(_) | Stmt::Raise(_) | Stmt::Break(_) | Stmt::Continue(_)) => true,
+        Some(Stmt::If(if_stmt)) => {
+            // All branches must terminate, and there must be an else
+            if if_stmt.elif_else_clauses.is_empty() {
+                return false;
+            }
+            let last_is_else = if_stmt
+                .elif_else_clauses
+                .last()
+                .map(|c| c.test.is_none())
+                .unwrap_or(false);
+            if !last_is_else {
+                return false;
+            }
+            body_always_terminates(&if_stmt.body)
+                && if_stmt
+                    .elif_else_clauses
+                    .iter()
+                    .all(|c| body_always_terminates(&c.body))
+        }
+        _ => false,
     }
 }
 
@@ -904,20 +810,13 @@ mod tests {
     use thorn_api::{AppGraph, AstCheck, CheckContext, FrameworkSettings};
 
     fn run_flow_check(source: &str) -> Vec<String> {
-        let parsed =
-            ruff_python_parser::parse(source, ruff_python_parser::Mode::Module.into()).unwrap();
-        let module = parsed.into_syntax().module().unwrap().clone();
+        let module = thorn_core::parser::parse_python(source).unwrap();
         let graph = AppGraph {
             models: vec![],
             installed_apps: vec![],
             settings: FrameworkSettings::default(),
         };
-        let ctx = CheckContext {
-            module: &module,
-            source,
-            filename: "test.py",
-            graph: &graph,
-        };
+        let ctx = CheckContext::new(&module, source, "test.py", &graph);
         PossiblyUsedBeforeAssignment
             .check(&ctx)
             .into_iter()
@@ -1020,20 +919,13 @@ def test_something(condition):
         result = 1
     return result
 "#;
-        let parsed =
-            ruff_python_parser::parse(source, ruff_python_parser::Mode::Module.into()).unwrap();
-        let module = parsed.into_syntax().module().unwrap().clone();
+        let module = thorn_core::parser::parse_python(source).unwrap();
         let graph = AppGraph {
             models: vec![],
             installed_apps: vec![],
             settings: FrameworkSettings::default(),
         };
-        let ctx = CheckContext {
-            module: &module,
-            source,
-            filename: "myapp/tests/test_views.py",
-            graph: &graph,
-        };
+        let ctx = CheckContext::new(&module, source, "myapp/tests/test_views.py", &graph);
         let codes: Vec<String> = PossiblyUsedBeforeAssignment
             .check(&ctx)
             .into_iter()

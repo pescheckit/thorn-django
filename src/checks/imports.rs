@@ -1,9 +1,8 @@
 //! Cross-file import graph analysis: circular imports (DJ042) and unused
 //! Django-specific imports (DJ043).
 
-use ruff_python_ast::visitor::{self, Visitor};
-use ruff_python_ast::*;
-use ruff_text_size::Ranged;
+use thorn_api::visitor::{Visitor, walk_expr, walk_stmt};
+use thorn_api::ast::*;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use thorn_api::{Diagnostic, Level};
@@ -163,15 +162,15 @@ struct ImportCollector<'a> {
 }
 
 impl<'a> ImportCollector<'a> {
-    fn line_of(&self, range: ruff_text_size::TextRange) -> u32 {
-        let offset = u32::from(range.start()) as usize;
+    fn line_of(&self, range: thorn_api::ByteRange) -> u32 {
+        let offset = range.start as usize;
         let before = &self.source[..offset.min(self.source.len())];
         before.chars().filter(|c| *c == '\n').count() as u32 + 1
     }
 
     fn add_import_from(&mut self, import: &StmtImportFrom, is_type_checking: bool) {
         let level = import.level;
-        let raw_module = import.module.as_ref().map(|m| m.as_str()).unwrap_or("");
+        let raw_module = import.module.as_deref().unwrap_or("");
 
         let module = if level > 0 {
             // Relative import
@@ -215,7 +214,7 @@ impl<'a> ImportCollector<'a> {
     }
 }
 
-impl<'a> Visitor<'_> for ImportCollector<'a> {
+impl<'a> Visitor for ImportCollector<'a> {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::Import(import) => {
@@ -239,7 +238,7 @@ impl<'a> Visitor<'_> for ImportCollector<'a> {
                     self.visit_body(&clause.body);
                 }
             }
-            _ => visitor::walk_stmt(self, stmt),
+            _ => walk_stmt(self, stmt),
         }
     }
 }
@@ -265,12 +264,12 @@ struct NameUsageCollector {
     used: HashSet<String>,
 }
 
-impl Visitor<'_> for NameUsageCollector {
+impl Visitor for NameUsageCollector {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         // Skip import statements – they define, not use
         match stmt {
             Stmt::Import(_) | Stmt::ImportFrom(_) => {}
-            _ => visitor::walk_stmt(self, stmt),
+            _ => walk_stmt(self, stmt),
         }
     }
 
@@ -278,7 +277,7 @@ impl Visitor<'_> for NameUsageCollector {
         if let Expr::Name(n) = expr {
             self.used.insert(n.id.as_str().to_string());
         }
-        visitor::walk_expr(self, expr);
+        walk_expr(self, expr);
     }
 }
 
@@ -301,14 +300,8 @@ fn build_import_graph(project_dir: &Path) -> HashMap<String, ModuleInfo> {
             Err(_) => continue,
         };
 
-        let parsed =
-            match ruff_python_parser::parse(&source, ruff_python_parser::Mode::Module.into()) {
-                Ok(p) => p,
-                Err(_) => continue,
-            };
-
-        let module_ast = match parsed.into_syntax().module() {
-            Some(m) => m.clone(),
+        let module_ast = match thorn_core::parser::parse_python(&source) {
+            Some(m) => m,
             None => continue,
         };
 
@@ -523,14 +516,8 @@ fn detect_unused_imports(graph: &HashMap<String, ModuleInfo>) -> Vec<Diagnostic>
             Err(_) => continue,
         };
 
-        let parsed =
-            match ruff_python_parser::parse(&source, ruff_python_parser::Mode::Module.into()) {
-                Ok(p) => p,
-                Err(_) => continue,
-            };
-
-        let module_ast = match parsed.into_syntax().module() {
-            Some(m) => m.clone(),
+        let module_ast = match thorn_core::parser::parse_python(&source) {
+            Some(m) => m,
             None => continue,
         };
 

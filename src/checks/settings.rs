@@ -1,8 +1,7 @@
 //! Django settings checks with import resolution.
 
-use ruff_python_ast::*;
-use ruff_python_parser::parse;
-use ruff_text_size::Ranged;
+use thorn_api::ast::*;
+use thorn_core::parser::parse_python;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use thorn_api::Diagnostic;
@@ -112,13 +111,8 @@ fn collect_settings(
         Err(_) => return,
     };
 
-    let parsed = match parse(&source, ruff_python_parser::Mode::Module.into()) {
-        Ok(p) => p,
-        Err(_) => return,
-    };
-
-    let module = match parsed.into_syntax().module() {
-        Some(m) => m.clone(),
+    let module = match parse_python(&source) {
+        Some(m) => m,
         None => return,
     };
 
@@ -128,11 +122,11 @@ fn collect_settings(
         match stmt {
             Stmt::ImportFrom(import) => {
                 if let Some(module_name) = &import.module {
-                    let imports_star = import.names.iter().any(|a| a.name.as_str() == "*");
+                    let imports_star = import.names.iter().any(|a| a.name == "*");
                     if imports_star {
                         if let Some(imported_file) = resolve_import(
                             file,
-                            module_name.as_str(),
+                            module_name,
                             Some(import.level),
                             project_dir,
                         ) {
@@ -144,9 +138,9 @@ fn collect_settings(
             Stmt::Assign(assign) => {
                 for target in &assign.targets {
                     if let Expr::Name(n) = target {
-                        let name = n.id.as_str();
+                        let name = &n.id;
                         if name.chars().all(|c| c.is_uppercase() || c == '_') && name.len() > 1 {
-                            let line = source[..assign.range().start().to_usize()]
+                            let line = source[..assign.range().start as usize]
                                 .chars()
                                 .filter(|c| *c == '\n')
                                 .count() as u32

@@ -353,6 +353,23 @@ impl Plugin for DjangoPlugin {
             Box::new(checks::ast::UsingConstantTest),
             Box::new(checks::ast::SelfAssigningVariable),
             Box::new(checks::flow::PossiblyUsedBeforeAssignment),
+            Box::new(checks::quality::PointlessStatement),
+            Box::new(checks::quality::RedefinedBuiltin),
+            Box::new(checks::quality::BroadExceptionCaught),
+            Box::new(checks::quality::ForgottenDebugStatement),
+            Box::new(checks::quality::SingletonComparison),
+            Box::new(checks::quality::SuperWithArguments),
+            Box::new(checks::errors::DangerousDefaultValue),
+            Box::new(checks::errors::FunctionRedefined),
+            Box::new(checks::errors::DuplicateDictKey),
+            Box::new(checks::errors::AssertOnTuple),
+            Box::new(checks::errors::BareExcept),
+            Box::new(checks::errors::NotImplementedRaised),
+            Box::new(checks::practices::UnreachableCode),
+            Box::new(checks::practices::UnusedImport),
+            Box::new(checks::practices::UnusedVariable),
+            Box::new(checks::practices::RedefinedOuterName),
+            Box::new(checks::practices::ComparisonWithCallable),
         ];
 
         if !self.has_graph {

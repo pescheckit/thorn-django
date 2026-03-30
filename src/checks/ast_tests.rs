@@ -4,31 +4,17 @@ use super::ast::*;
 use thorn_api::{AppGraph, AstCheck, CheckContext};
 
 fn run_check(check: &dyn AstCheck, source: &str) -> Vec<String> {
-    let parsed =
-        ruff_python_parser::parse(source, ruff_python_parser::Mode::Module.into()).unwrap();
-    let module = parsed.into_syntax().module().unwrap().clone();
+    let module = thorn_core::parser::parse_python(source).unwrap();
     let graph = AppGraph::default();
-    let ctx = CheckContext {
-        module: &module,
-        source,
-        filename: "test.py",
-        graph: &graph,
-    };
+    let ctx = CheckContext::new(&module, source, "test.py", &graph);
     check.check(&ctx).into_iter().map(|d| d.code).collect()
 }
 
 /// Run a check using a specific filename (needed for checks that gate on path patterns).
 fn run_check_with_filename(check: &dyn AstCheck, source: &str, filename: &str) -> Vec<String> {
-    let parsed =
-        ruff_python_parser::parse(source, ruff_python_parser::Mode::Module.into()).unwrap();
-    let module = parsed.into_syntax().module().unwrap().clone();
+    let module = thorn_core::parser::parse_python(source).unwrap();
     let graph = AppGraph::default();
-    let ctx = CheckContext {
-        module: &module,
-        source,
-        filename,
-        graph: &graph,
-    };
+    let ctx = CheckContext::new(&module, source, filename, &graph);
     check.check(&ctx).into_iter().map(|d| d.code).collect()
 }
 

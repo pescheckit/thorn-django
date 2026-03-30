@@ -67,15 +67,8 @@ fn make_fk(name: &str, to_model: &str) -> Relation {
 }
 
 fn run_check_with_graph(check: &dyn AstCheck, source: &str, graph: &AppGraph) -> Vec<String> {
-    let parsed =
-        ruff_python_parser::parse(source, ruff_python_parser::Mode::Module.into()).unwrap();
-    let module = parsed.into_syntax().module().unwrap().clone();
-    let ctx = CheckContext {
-        module: &module,
-        source,
-        filename: "test.py",
-        graph,
-    };
+    let module = thorn_core::parser::parse_python(source).unwrap();
+    let ctx = CheckContext::new(&module, source, "test.py", graph);
     check.check(&ctx).into_iter().map(|d| d.code).collect()
 }
 

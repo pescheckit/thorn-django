@@ -13,9 +13,7 @@ path = "src/bin/thorn.rs"
 [dependencies]
 thorn-api = { git = "https://github.com/pescheckit/thorn" }
 thorn-cli = { git = "https://github.com/pescheckit/thorn" }
-ruff_python_ast = { git = "https://github.com/astral-sh/ruff", tag = "0.11.6" }
-ruff_text_size = { git = "https://github.com/astral-sh/ruff", tag = "0.11.6" }
-ruff_python_parser = { git = "https://github.com/astral-sh/ruff", tag = "0.11.6" }
+thorn-core = { git = "https://github.com/pescheckit/thorn" }
 toml = "0.8"
 pyo3 = { version = "0.23", features = ["auto-initialize"] }
 serde = { version = "1", features = ["derive"] }
@@ -30,3 +28,4 @@ tempfile = "3"
 [patch."https://github.com/pescheckit/thorn"]
 thorn-api = { path = "../thorn/crates/thorn-api" }
 thorn-cli = { path = "../thorn/crates/thorn-cli" }
+thorn-core = { path = "../thorn/crates/thorn-core" }

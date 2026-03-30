@@ -1,9 +1,10 @@
 //! Cross-referencing checks: combine AST analysis with the live AppGraph.
 
-use ruff_python_ast::visitor::{self, Visitor};
-use ruff_python_ast::*;
-use ruff_text_size::Ranged;
+use thorn_api::visitor::{Visitor, walk_expr, walk_stmt};
+use thorn_api::ast::*;
 use thorn_api::{AstCheck, CheckContext, Diagnostic};
+
+use super::common::text_range;
 
 /// Check if a model is from a third-party package (incomplete schema, can't validate fields).
 fn is_third_party_model(model: &thorn_api::Model) -> bool {
@@ -79,14 +80,14 @@ const QUERYSET_FILTER_METHODS: &[&str] = &[
     "create",
 ];
 
-impl<'a, 'g> Visitor<'a> for FilterFieldVisitor<'g> {
-    fn visit_expr(&mut self, expr: &'a Expr) {
+impl<'g> Visitor for FilterFieldVisitor<'g> {
+    fn visit_expr(&mut self, expr: &Expr) {
         if let Expr::Call(call) = expr {
             if let Some((model_name, method_name)) = extract_model_queryset_call(&call.func) {
                 if QUERYSET_FILTER_METHODS.contains(&method_name.as_str()) {
                     let candidates = self.graph.find_models_by_name(&model_name);
                     if candidates.is_empty() || candidates.iter().all(|m| is_third_party_model(m)) {
-                        visitor::walk_expr(self, expr);
+                        walk_expr(self, expr);
                         return;
                     }
                     // Collect annotation names from the queryset chain
@@ -115,7 +116,7 @@ impl<'a, 'g> Visitor<'a> for FilterFieldVisitor<'g> {
                                         ),
                                         &self.filename,
                                     )
-                                    .with_range(kw.range()),
+                                    .with_range(text_range(kw.range())),
                                 );
                             }
                         }
@@ -123,7 +124,7 @@ impl<'a, 'g> Visitor<'a> for FilterFieldVisitor<'g> {
                 }
             }
         }
-        visitor::walk_expr(self, expr);
+        walk_expr(self, expr);
     }
 }
 
@@ -158,21 +159,21 @@ struct ValuesFieldVisitor<'g> {
 const QUERYSET_STRING_ARG_METHODS: &[&str] =
     &["values", "values_list", "order_by", "only", "defer"];
 
-impl<'a, 'g> Visitor<'a> for ValuesFieldVisitor<'g> {
-    fn visit_expr(&mut self, expr: &'a Expr) {
+impl<'g> Visitor for ValuesFieldVisitor<'g> {
+    fn visit_expr(&mut self, expr: &Expr) {
         if let Expr::Call(call) = expr {
             if let Some((model_name, method_name)) = extract_model_queryset_call(&call.func) {
                 if QUERYSET_STRING_ARG_METHODS.contains(&method_name.as_str()) {
                     let candidates = self.graph.find_models_by_name(&model_name);
                     if candidates.is_empty() || candidates.iter().all(|m| is_third_party_model(m)) {
-                        visitor::walk_expr(self, expr);
+                        walk_expr(self, expr);
                         return;
                     }
                     // Collect annotation names from the queryset chain
                     let annotations = collect_annotation_names(&call.func);
                     for arg in &call.arguments.args {
                         if let Expr::StringLiteral(s) = arg {
-                            let field_name = s.value.to_str();
+                            let field_name = s.value.as_str();
                             let base_field = field_name.split("__").next().unwrap_or(field_name);
                             let base_field = base_field.strip_prefix('-').unwrap_or(base_field);
                             if base_field == "pk" || base_field == "?" {
@@ -186,14 +187,14 @@ impl<'a, 'g> Visitor<'a> for ValuesFieldVisitor<'g> {
                                 .iter()
                                 .any(|m| model_has_field_flexible(m, base_field));
                             if !found {
-                                self.diagnostics.push(Diagnostic::new("DJ202", format!("Field '{field_name}' passed to .{method_name}() does not exist on model '{}'.", model_name), &self.filename).with_range(arg.range()));
+                                self.diagnostics.push(Diagnostic::new("DJ202", format!("Field '{field_name}' passed to .{method_name}() does not exist on model '{}'.", model_name), &self.filename).with_range(text_range(arg.range())));
                             }
                         }
                     }
                 }
             }
         }
-        visitor::walk_expr(self, expr);
+        walk_expr(self, expr);
     }
 }
 
@@ -296,8 +297,8 @@ const BUILTIN_MANAGER_METHODS: &[&str] = &[
     "model",
 ];
 
-impl<'a, 'g> Visitor<'a> for ManagerMethodVisitor<'g> {
-    fn visit_expr(&mut self, expr: &'a Expr) {
+impl<'g> Visitor for ManagerMethodVisitor<'g> {
+    fn visit_expr(&mut self, expr: &Expr) {
         if let Expr::Call(call) = expr {
             if let Expr::Attribute(attr) = call.func.as_ref() {
                 if let Expr::Attribute(inner_attr) = attr.value.as_ref() {
@@ -311,7 +312,7 @@ impl<'a, 'g> Visitor<'a> for ManagerMethodVisitor<'g> {
                                 if !BUILTIN_MANAGER_METHODS.contains(&method_name)
                                     && !manager.custom_methods.contains(&method_name.to_string())
                                 {
-                                    self.diagnostics.push(Diagnostic::new("DJ203", format!("Method '{method_name}' does not exist on manager '{manager_name}' of model '{}'.", model.name), &self.filename).with_range(attr.range()));
+                                    self.diagnostics.push(Diagnostic::new("DJ203", format!("Method '{method_name}' does not exist on manager '{manager_name}' of model '{}'.", model.name), &self.filename).with_range(text_range(attr.range())));
                                 }
                             }
                         }
@@ -319,7 +320,7 @@ impl<'a, 'g> Visitor<'a> for ManagerMethodVisitor<'g> {
                 }
             }
         }
-        visitor::walk_expr(self, expr);
+        walk_expr(self, expr);
     }
 }
 
@@ -351,8 +352,8 @@ struct GetDisplayVisitor<'g> {
     graph: &'g thorn_api::AppGraph,
 }
 
-impl<'a, 'g> Visitor<'a> for GetDisplayVisitor<'g> {
-    fn visit_expr(&mut self, expr: &'a Expr) {
+impl<'g> Visitor for GetDisplayVisitor<'g> {
+    fn visit_expr(&mut self, expr: &Expr) {
         if let Expr::Call(call) = expr {
             if let Expr::Attribute(attr) = call.func.as_ref() {
                 let method = attr.attr.as_str();
@@ -362,7 +363,7 @@ impl<'a, 'g> Visitor<'a> for GetDisplayVisitor<'g> {
                         for model in &self.graph.models {
                             if let Some(field) = model.get_field(field_name) {
                                 if field.choices.is_empty() {
-                                    self.diagnostics.push(Diagnostic::new("DJ204", format!("get_{field_name}_display() called but field '{field_name}' on model '{}' has no choices.", model.name), &self.filename).with_range(expr.range()));
+                                    self.diagnostics.push(Diagnostic::new("DJ204", format!("get_{field_name}_display() called but field '{field_name}' on model '{}' has no choices.", model.name), &self.filename).with_range(text_range(expr.range())));
                                 }
                                 break;
                             }
@@ -371,7 +372,7 @@ impl<'a, 'g> Visitor<'a> for GetDisplayVisitor<'g> {
                 }
             }
         }
-        visitor::walk_expr(self, expr);
+        walk_expr(self, expr);
     }
 }
 
@@ -406,14 +407,14 @@ struct SerializerFieldVisitor<'g> {
     graph: &'g thorn_api::AppGraph,
 }
 
-impl<'a, 'g> Visitor<'a> for SerializerFieldVisitor<'g> {
-    fn visit_stmt(&mut self, stmt: &'a Stmt) {
+impl<'g> Visitor for SerializerFieldVisitor<'g> {
+    fn visit_stmt(&mut self, stmt: &Stmt) {
         if let Stmt::ClassDef(class) = stmt {
             if is_serializer(class) {
                 if let Some((model_name, field_names)) = extract_meta_model_and_fields(class) {
                     let candidates = self.graph.find_models_by_name(&model_name);
                     if candidates.is_empty() || candidates.iter().all(|m| is_third_party_model(m)) {
-                        visitor::walk_stmt(self, stmt);
+                        walk_stmt(self, stmt);
                         return;
                     }
                     // Collect explicitly declared fields and get_X methods on the serializer class
@@ -430,13 +431,13 @@ impl<'a, 'g> Visitor<'a> for SerializerFieldVisitor<'g> {
                             m.has_field_or_relation(field_name) || m.has_method(field_name)
                         });
                         if !found && field_name != "pk" {
-                            self.diagnostics.push(Diagnostic::new("DJ205", format!("Serializer '{}' references field '{}' which doesn't exist on model '{}'.", class.name, field_name, model_name), &self.filename).with_range(*range));
+                            self.diagnostics.push(Diagnostic::new("DJ205", format!("Serializer '{}' references field '{}' which doesn't exist on model '{}'.", class.name, field_name, model_name), &self.filename).with_range(text_range(*range)));
                         }
                     }
                 }
             }
         }
-        visitor::walk_stmt(self, stmt);
+        walk_stmt(self, stmt);
     }
 }
 
@@ -468,8 +469,8 @@ struct ReverseAccessorVisitor<'g> {
     graph: &'g thorn_api::AppGraph,
 }
 
-impl<'a, 'g> Visitor<'a> for ReverseAccessorVisitor<'g> {
-    fn visit_expr(&mut self, expr: &'a Expr) {
+impl<'g> Visitor for ReverseAccessorVisitor<'g> {
+    fn visit_expr(&mut self, expr: &Expr) {
         if let Expr::Attribute(attr) = expr {
             let accessor = attr.attr.as_str();
             if let Some(model_name_lower) = accessor.strip_suffix("_set") {
@@ -483,13 +484,13 @@ impl<'a, 'g> Visitor<'a> for ReverseAccessorVisitor<'g> {
                             && rel.related_name != accessor
                             && rel.related_name != "+"
                         {
-                            self.diagnostics.push(Diagnostic::new("DJ206", format!("Default reverse accessor '{accessor}' won't work — the FK from '{}' to '{}' has related_name='{}'. Use '.{}' instead.", model.name, rel.to_model, rel.related_name, rel.related_name), &self.filename).with_range(expr.range()));
+                            self.diagnostics.push(Diagnostic::new("DJ206", format!("Default reverse accessor '{accessor}' won't work — the FK from '{}' to '{}' has related_name='{}'. Use '.{}' instead.", model.name, rel.to_model, rel.related_name, rel.related_name), &self.filename).with_range(text_range(expr.range())));
                         }
                     }
                 }
             }
         }
-        visitor::walk_expr(self, expr);
+        walk_expr(self, expr);
     }
 }
 
@@ -529,19 +530,19 @@ struct FKIdVisitor<'g> {
     current_class: Option<String>,
 }
 
-impl<'a, 'g> Visitor<'a> for FKIdVisitor<'g> {
-    fn visit_stmt(&mut self, stmt: &'a Stmt) {
+impl<'g> Visitor for FKIdVisitor<'g> {
+    fn visit_stmt(&mut self, stmt: &Stmt) {
         if let Stmt::ClassDef(class) = stmt {
             let prev = self.current_class.take();
             self.current_class = Some(class.name.to_string());
-            visitor::walk_stmt(self, stmt);
+            walk_stmt(self, stmt);
             self.current_class = prev;
         } else {
-            visitor::walk_stmt(self, stmt);
+            walk_stmt(self, stmt);
         }
     }
 
-    fn visit_expr(&mut self, expr: &'a Expr) {
+    fn visit_expr(&mut self, expr: &Expr) {
         if let Expr::Attribute(outer) = expr {
             if matches!(outer.attr.as_str(), "id" | "pk") {
                 if let Expr::Attribute(inner) = outer.value.as_ref() {
@@ -567,7 +568,7 @@ impl<'a, 'g> Visitor<'a> for FKIdVisitor<'g> {
                                     })
                             });
                             if model_has_fk {
-                                self.diagnostics.push(Diagnostic::new("DJ207", format!("'self.{field_name}.{}' triggers a DB query. Use 'self.{field_name}_id' — reads the cached column directly.", outer.attr.as_str()), &self.filename).with_range(expr.range()));
+                                self.diagnostics.push(Diagnostic::new("DJ207", format!("'self.{field_name}.{}' triggers a DB query. Use 'self.{field_name}_id' — reads the cached column directly.", outer.attr.as_str()), &self.filename).with_range(text_range(expr.range())));
                                 return;
                             }
                         }
@@ -575,7 +576,7 @@ impl<'a, 'g> Visitor<'a> for FKIdVisitor<'g> {
                 }
             }
         }
-        visitor::walk_expr(self, expr);
+        walk_expr(self, expr);
     }
 }
 
@@ -623,7 +624,7 @@ fn is_serializer(class: &StmtClassDef) -> bool {
 
 fn extract_meta_model_and_fields(
     class: &StmtClassDef,
-) -> Option<(String, Vec<(String, ruff_text_size::TextRange)>)> {
+) -> Option<(String, Vec<(String, thorn_api::ByteRange)>)> {
     let mut model_name = None;
     let mut field_names = Vec::new();
 
@@ -645,7 +646,7 @@ fn extract_meta_model_and_fields(
                                         for elt in &list.elts {
                                             if let Expr::StringLiteral(s) = elt {
                                                 field_names.push((
-                                                    s.value.to_str().to_string(),
+                                                    s.value.as_str().to_string(),
                                                     elt.range(),
                                                 ));
                                             }
@@ -654,13 +655,13 @@ fn extract_meta_model_and_fields(
                                         for elt in &tuple.elts {
                                             if let Expr::StringLiteral(s) = elt {
                                                 field_names.push((
-                                                    s.value.to_str().to_string(),
+                                                    s.value.as_str().to_string(),
                                                     elt.range(),
                                                 ));
                                             }
                                         }
                                     } else if let Expr::StringLiteral(s) = assign.value.as_ref() {
-                                        if s.value.to_str() == "__all__" {
+                                        if s.value.as_str() == "__all__" {
                                             field_names.push(("__all__".into(), assign.range()));
                                         }
                                     }

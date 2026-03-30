@@ -1,7 +1,8 @@
-use ruff_python_ast::visitor::{self, Visitor};
-use ruff_python_ast::*;
-use ruff_text_size::Ranged;
+use thorn_api::visitor::{Visitor, walk_expr, walk_stmt};
+use thorn_api::ast::*;
 use thorn_api::{AstCheck, CheckContext, Diagnostic};
+
+use super::common::{has_null_true, has_unique_true, is_django_model, is_model_form, text_range};
 
 // ── DJ001: NullableStringField ────────────────────────────────────────────
 
@@ -40,7 +41,7 @@ const STRING_FIELD_NAMES: &[&str] = &[
     // (they store NULL in the DB for "no address" rather than an empty string)
 ];
 
-impl<'a> Visitor<'_> for NullableStringFieldVisitor<'a> {
+impl<'a> Visitor for NullableStringFieldVisitor<'a> {
     fn visit_expr(&mut self, expr: &Expr) {
         if let Expr::Call(call) = expr {
             let fn_name = match call.func.as_ref() {
@@ -59,13 +60,13 @@ impl<'a> Visitor<'_> for NullableStringFieldVisitor<'a> {
                                 "Avoid null=True on string-based fields. Use blank=True instead (null=True is only needed with unique=True).",
                                 self.filename,
                             )
-                            .with_range(call.range()),
+                            .with_range(text_range(call.range())),
                         );
                     }
                 }
             }
         }
-        visitor::walk_expr(self, expr);
+        walk_expr(self, expr);
     }
 }
 
@@ -99,7 +100,7 @@ struct ModelFormExcludeVisitor<'a> {
     in_meta: bool,
 }
 
-impl<'a> Visitor<'_> for ModelFormExcludeVisitor<'a> {
+impl<'a> Visitor for ModelFormExcludeVisitor<'a> {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         if let Stmt::ClassDef(cls) = stmt {
             let was_modelform = self.in_modelform;
@@ -110,7 +111,7 @@ impl<'a> Visitor<'_> for ModelFormExcludeVisitor<'a> {
                 self.in_modelform = true;
                 self.in_meta = false;
                 self.class_name = cls.name.as_str().to_string();
-                visitor::walk_stmt(self, stmt);
+                walk_stmt(self, stmt);
                 self.in_modelform = was_modelform;
                 self.in_meta = was_meta;
                 self.class_name = prev_name;
@@ -119,12 +120,12 @@ impl<'a> Visitor<'_> for ModelFormExcludeVisitor<'a> {
 
             if self.in_modelform && cls.name.as_str() == "Meta" {
                 self.in_meta = true;
-                visitor::walk_stmt(self, stmt);
+                walk_stmt(self, stmt);
                 self.in_meta = was_meta;
                 return;
             }
 
-            visitor::walk_stmt(self, stmt);
+            walk_stmt(self, stmt);
         } else if let Stmt::Assign(assign) = stmt {
             if self.in_meta {
                 for target in &assign.targets {
@@ -137,14 +138,14 @@ impl<'a> Visitor<'_> for ModelFormExcludeVisitor<'a> {
                                     format!("ModelForm '{name}' should use 'fields' instead of 'exclude' in Meta."),
                                     self.filename,
                                 )
-                                .with_range(assign.range()),
+                                .with_range(text_range(assign.range())),
                             );
                         }
                     }
                 }
             }
         } else {
-            visitor::walk_stmt(self, stmt);
+            walk_stmt(self, stmt);
         }
     }
 }
@@ -173,7 +174,7 @@ struct RawSqlVisitor<'a> {
     filename: &'a str,
 }
 
-impl<'a> Visitor<'_> for RawSqlVisitor<'a> {
+impl<'a> Visitor for RawSqlVisitor<'a> {
     fn visit_expr(&mut self, expr: &Expr) {
         if let Expr::Call(call) = expr {
             if let Expr::Attribute(attr) = call.func.as_ref() {
@@ -185,12 +186,12 @@ impl<'a> Visitor<'_> for RawSqlVisitor<'a> {
                             "Avoid using .raw()/.extra() — prefer QuerySet methods.",
                             self.filename,
                         )
-                        .with_range(call.range()),
+                        .with_range(text_range(call.range())),
                     );
                 }
             }
         }
-        visitor::walk_expr(self, expr);
+        walk_expr(self, expr);
     }
 }
 
@@ -218,7 +219,7 @@ struct LocalsInRenderVisitor<'a> {
     filename: &'a str,
 }
 
-impl<'a> Visitor<'_> for LocalsInRenderVisitor<'a> {
+impl<'a> Visitor for LocalsInRenderVisitor<'a> {
     fn visit_expr(&mut self, expr: &Expr) {
         if let Expr::Call(call) = expr {
             let is_render = match call.func.as_ref() {
@@ -235,14 +236,14 @@ impl<'a> Visitor<'_> for LocalsInRenderVisitor<'a> {
                                 "Do not pass locals() as render context — explicitly list variables.",
                                 self.filename,
                             )
-                            .with_range(call.range()),
+                            .with_range(text_range(call.range())),
                         );
                         break;
                     }
                 }
             }
         }
-        visitor::walk_expr(self, expr);
+        walk_expr(self, expr);
     }
 }
 
@@ -275,7 +276,7 @@ impl AstCheck for ModelWithoutStrMethod {
                                 format!("Model '{name}' is missing a __str__ method."),
                                 ctx.filename,
                             )
-                            .with_range(cls.range()),
+                            .with_range(text_range(cls.range())),
                         );
                     }
                 }
@@ -313,7 +314,7 @@ struct FkOnDeleteVisitor<'a> {
     filename: &'a str,
 }
 
-impl<'a> Visitor<'_> for FkOnDeleteVisitor<'a> {
+impl<'a> Visitor for FkOnDeleteVisitor<'a> {
     fn visit_expr(&mut self, expr: &Expr) {
         if let Expr::Call(call) = expr {
             let fn_name = match call.func.as_ref() {
@@ -335,13 +336,13 @@ impl<'a> Visitor<'_> for FkOnDeleteVisitor<'a> {
                                 "ForeignKey/OneToOneField is missing on_delete argument.",
                                 self.filename,
                             )
-                            .with_range(call.range()),
+                            .with_range(text_range(call.range())),
                         );
                     }
                 }
             }
         }
-        visitor::walk_expr(self, expr);
+        walk_expr(self, expr);
     }
 }
 
@@ -379,7 +380,7 @@ struct ModelFormFieldsAllVisitor<'a> {
     in_meta: bool,
 }
 
-impl<'a> Visitor<'_> for ModelFormFieldsAllVisitor<'a> {
+impl<'a> Visitor for ModelFormFieldsAllVisitor<'a> {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         if let Stmt::ClassDef(cls) = stmt {
             let prev_target = self.in_target_class;
@@ -390,7 +391,7 @@ impl<'a> Visitor<'_> for ModelFormFieldsAllVisitor<'a> {
                 self.in_target_class = true;
                 self.in_meta = false;
                 self.class_name = cls.name.as_str().to_string();
-                visitor::walk_stmt(self, stmt);
+                walk_stmt(self, stmt);
                 self.in_target_class = prev_target;
                 self.in_meta = prev_meta;
                 self.class_name = prev_name;
@@ -399,19 +400,19 @@ impl<'a> Visitor<'_> for ModelFormFieldsAllVisitor<'a> {
 
             if self.in_target_class && cls.name.as_str() == "Meta" {
                 self.in_meta = true;
-                visitor::walk_stmt(self, stmt);
+                walk_stmt(self, stmt);
                 self.in_meta = prev_meta;
                 return;
             }
 
-            visitor::walk_stmt(self, stmt);
+            walk_stmt(self, stmt);
         } else if let Stmt::Assign(assign) = stmt {
             if self.in_meta || self.in_target_class {
                 for target in &assign.targets {
                     if let Expr::Name(n) = target {
                         if n.id.as_str() == "fields" {
                             if let Expr::StringLiteral(s) = assign.value.as_ref() {
-                                if s.value.to_str() == "__all__" {
+                                if s.value.as_str() == "__all__" {
                                     let name = self.class_name.clone();
                                     self.diags.push(
                                         Diagnostic::new(
@@ -419,7 +420,7 @@ impl<'a> Visitor<'_> for ModelFormFieldsAllVisitor<'a> {
                                             format!("'{name}' uses fields = '__all__' — new model fields will be automatically exposed."),
                                             self.filename,
                                         )
-                                        .with_range(assign.range()),
+                                        .with_range(text_range(assign.range())),
                                     );
                                 }
                             }
@@ -428,7 +429,7 @@ impl<'a> Visitor<'_> for ModelFormFieldsAllVisitor<'a> {
                 }
             }
         } else {
-            visitor::walk_stmt(self, stmt);
+            walk_stmt(self, stmt);
         }
     }
 }
@@ -461,14 +462,14 @@ struct RandomOrderByVisitor<'a> {
     filename: &'a str,
 }
 
-impl<'a> Visitor<'_> for RandomOrderByVisitor<'a> {
+impl<'a> Visitor for RandomOrderByVisitor<'a> {
     fn visit_expr(&mut self, expr: &Expr) {
         if let Expr::Call(call) = expr {
             if let Expr::Attribute(attr) = call.func.as_ref() {
                 if attr.attr.as_str() == "order_by" {
                     let has_question = call.arguments.args.iter().any(|arg| {
                         if let Expr::StringLiteral(s) = arg {
-                            s.value.to_str() == "?"
+                            s.value.as_str() == "?"
                         } else {
                             false
                         }
@@ -480,13 +481,13 @@ impl<'a> Visitor<'_> for RandomOrderByVisitor<'a> {
                                 "order_by('?') causes a full table scan with ORDER BY RANDOM().",
                                 self.filename,
                             )
-                            .with_range(call.range()),
+                            .with_range(text_range(call.range())),
                         );
                     }
                 }
             }
         }
-        visitor::walk_expr(self, expr);
+        walk_expr(self, expr);
     }
 }
 
@@ -514,7 +515,7 @@ struct QuerysetBoolEvalVisitor<'a> {
     filename: &'a str,
 }
 
-impl<'a> Visitor<'_> for QuerysetBoolEvalVisitor<'a> {
+impl<'a> Visitor for QuerysetBoolEvalVisitor<'a> {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         if let Stmt::If(if_stmt) = stmt {
             let test = if_stmt.test.as_ref();
@@ -537,11 +538,11 @@ impl<'a> Visitor<'_> for QuerysetBoolEvalVisitor<'a> {
                         "QuerySet evaluated in boolean context — loads entire result set. Use .exists() instead.",
                         self.filename,
                     )
-                    .with_range(if_stmt.range()),
+                    .with_range(text_range(if_stmt.range())),
                 );
             }
         }
-        visitor::walk_stmt(self, stmt);
+        walk_stmt(self, stmt);
     }
 }
 
@@ -569,7 +570,7 @@ struct QuerysetLenVisitor<'a> {
     filename: &'a str,
 }
 
-impl<'a> Visitor<'_> for QuerysetLenVisitor<'a> {
+impl<'a> Visitor for QuerysetLenVisitor<'a> {
     fn visit_expr(&mut self, expr: &Expr) {
         if let Expr::Call(call) = expr {
             if let Expr::Name(n) = call.func.as_ref() {
@@ -582,14 +583,14 @@ impl<'a> Visitor<'_> for QuerysetLenVisitor<'a> {
                                     "len() on QuerySet loads all rows into memory. Use .count() for counting.",
                                     self.filename,
                                 )
-                                .with_range(call.range()),
+                                .with_range(text_range(call.range())),
                             );
                         }
                     }
                 }
             }
         }
-        visitor::walk_expr(self, expr);
+        walk_expr(self, expr);
     }
 }
 
@@ -619,14 +620,14 @@ struct MissingFExprVisitor<'a> {
     in_model_class: bool,
 }
 
-impl<'a> Visitor<'_> for MissingFExprVisitor<'a> {
+impl<'a> Visitor for MissingFExprVisitor<'a> {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         if let Stmt::ClassDef(cls) = stmt {
             let was = self.in_model_class;
             if is_django_model(cls) {
                 self.in_model_class = true;
             }
-            visitor::walk_stmt(self, stmt);
+            walk_stmt(self, stmt);
             self.in_model_class = was;
             return;
         }
@@ -643,7 +644,7 @@ impl<'a> Visitor<'_> for MissingFExprVisitor<'a> {
                                 format!("'self.{field_name} += ...' is a race condition under concurrency. Use F() for atomic updates."),
                                 self.filename,
                             )
-                            .with_range(aug.range()),
+                            .with_range(text_range(aug.range())),
                         );
                     }
                 }
@@ -665,7 +666,7 @@ impl<'a> Visitor<'_> for MissingFExprVisitor<'a> {
                                                 format!("'self.{field_name} += ...' is a race condition under concurrency. Use F() for atomic updates."),
                                                 self.filename,
                                             )
-                                            .with_range(assign.range()),
+                                            .with_range(text_range(assign.range())),
                                         );
                                     }
                                 }
@@ -676,7 +677,7 @@ impl<'a> Visitor<'_> for MissingFExprVisitor<'a> {
             }
         }
 
-        visitor::walk_stmt(self, stmt);
+        walk_stmt(self, stmt);
     }
 }
 
@@ -734,7 +735,7 @@ fn is_interpolated_string(expr: &Expr) -> bool {
     }
 }
 
-impl<'a> Visitor<'_> for RawSqlInjectionVisitor<'a> {
+impl<'a> Visitor for RawSqlInjectionVisitor<'a> {
     fn visit_expr(&mut self, expr: &Expr) {
         if let Expr::Call(call) = expr {
             if let Expr::Attribute(attr) = call.func.as_ref() {
@@ -748,7 +749,7 @@ impl<'a> Visitor<'_> for RawSqlInjectionVisitor<'a> {
                                     format!(".{method}() with string interpolation is a SQL injection risk."),
                                     self.filename,
                                 )
-                                .with_range(call.range()),
+                                .with_range(text_range(call.range())),
                             );
                         }
                     }
@@ -763,14 +764,14 @@ impl<'a> Visitor<'_> for RawSqlInjectionVisitor<'a> {
                                     format!(".{method}() with string interpolation is a SQL injection risk."),
                                     self.filename,
                                 )
-                                .with_range(call.range()),
+                                .with_range(text_range(call.range())),
                             );
                         }
                     }
                 }
             }
         }
-        visitor::walk_expr(self, expr);
+        walk_expr(self, expr);
     }
 }
 
@@ -804,7 +805,7 @@ struct DefaultMetaOrderingVisitor<'a> {
     in_meta: bool,
 }
 
-impl<'a> Visitor<'_> for DefaultMetaOrderingVisitor<'a> {
+impl<'a> Visitor for DefaultMetaOrderingVisitor<'a> {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         if let Stmt::ClassDef(cls) = stmt {
             let prev_model = self.in_model;
@@ -815,7 +816,7 @@ impl<'a> Visitor<'_> for DefaultMetaOrderingVisitor<'a> {
                 self.in_model = true;
                 self.in_meta = false;
                 self.model_name = cls.name.as_str().to_string();
-                visitor::walk_stmt(self, stmt);
+                walk_stmt(self, stmt);
                 self.in_model = prev_model;
                 self.in_meta = prev_meta;
                 self.model_name = prev_name;
@@ -824,12 +825,12 @@ impl<'a> Visitor<'_> for DefaultMetaOrderingVisitor<'a> {
 
             if self.in_model && cls.name.as_str() == "Meta" {
                 self.in_meta = true;
-                visitor::walk_stmt(self, stmt);
+                walk_stmt(self, stmt);
                 self.in_meta = prev_meta;
                 return;
             }
 
-            visitor::walk_stmt(self, stmt);
+            walk_stmt(self, stmt);
         } else if let Stmt::Assign(assign) = stmt {
             if self.in_meta {
                 for target in &assign.targets {
@@ -842,14 +843,14 @@ impl<'a> Visitor<'_> for DefaultMetaOrderingVisitor<'a> {
                                     format!("Model '{name}' has default Meta.ordering — adds ORDER BY to every query."),
                                     self.filename,
                                 )
-                                .with_range(assign.range()),
+                                .with_range(text_range(assign.range())),
                             );
                         }
                     }
                 }
             }
         } else {
-            visitor::walk_stmt(self, stmt);
+            walk_stmt(self, stmt);
         }
     }
 }
@@ -891,7 +892,7 @@ struct CsrfExemptVisitor<'a> {
     filename: &'a str,
 }
 
-impl<'a> Visitor<'_> for CsrfExemptVisitor<'a> {
+impl<'a> Visitor for CsrfExemptVisitor<'a> {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         if let Stmt::FunctionDef(func) = stmt {
             let fn_name_lower = func.name.as_str().to_lowercase();
@@ -900,7 +901,7 @@ impl<'a> Visitor<'_> for CsrfExemptVisitor<'a> {
                 .any(|kw| fn_name_lower.contains(kw));
 
             if !skip_fn {
-                let has_csrf_exempt = func.decorator_list.iter().any(|dec| match &dec.expression {
+                let has_csrf_exempt = func.decorator_list.iter().any(|dec| match dec {
                     Expr::Name(n) => n.id.as_str() == "csrf_exempt",
                     Expr::Attribute(a) => a.attr.as_str() == "csrf_exempt",
                     _ => false,
@@ -912,12 +913,12 @@ impl<'a> Visitor<'_> for CsrfExemptVisitor<'a> {
                             "@csrf_exempt disables CSRF protection on a non-webhook view.",
                             self.filename,
                         )
-                        .with_range(func.range()),
+                        .with_range(text_range(func.range())),
                     );
                 }
             }
         }
-        visitor::walk_stmt(self, stmt);
+        walk_stmt(self, stmt);
     }
 }
 
@@ -956,7 +957,7 @@ fn is_request_post(expr: &Expr) -> bool {
     false
 }
 
-impl<'a> Visitor<'_> for RequestPostBoolVisitor<'a> {
+impl<'a> Visitor for RequestPostBoolVisitor<'a> {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         if let Stmt::If(if_stmt) = stmt {
             let test = if_stmt.test.as_ref();
@@ -974,11 +975,11 @@ impl<'a> Visitor<'_> for RequestPostBoolVisitor<'a> {
                         "'if request.POST' is falsy for empty POST bodies. Use 'if request.method == \"POST\"'.",
                         self.filename,
                     )
-                    .with_range(if_stmt.range()),
+                    .with_range(text_range(if_stmt.range())),
                 );
             }
         }
-        visitor::walk_stmt(self, stmt);
+        walk_stmt(self, stmt);
     }
 }
 
@@ -1018,13 +1019,13 @@ fn is_count_call(expr: &Expr) -> bool {
 fn is_zero_literal(expr: &Expr) -> bool {
     if let Expr::NumberLiteral(n) = expr {
         if let Number::Int(i) = &n.value {
-            return i.as_u8() == Some(0);
+            return *i == 0;
         }
     }
     false
 }
 
-impl<'a> Visitor<'_> for CountGtZeroVisitor<'a> {
+impl<'a> Visitor for CountGtZeroVisitor<'a> {
     fn visit_expr(&mut self, expr: &Expr) {
         if let Expr::Compare(cmp) = expr {
             let left_is_count = is_count_call(cmp.left.as_ref());
@@ -1053,11 +1054,11 @@ impl<'a> Visitor<'_> for CountGtZeroVisitor<'a> {
                         ".count() > 0 scans all rows. Use .exists() instead.",
                         self.filename,
                     )
-                    .with_range(cmp.range()),
+                    .with_range(text_range(cmp.range())),
                 );
             }
         }
-        visitor::walk_expr(self, expr);
+        walk_expr(self, expr);
     }
 }
 
@@ -1085,7 +1086,7 @@ struct SelectRelatedNoArgsVisitor<'a> {
     filename: &'a str,
 }
 
-impl<'a> Visitor<'_> for SelectRelatedNoArgsVisitor<'a> {
+impl<'a> Visitor for SelectRelatedNoArgsVisitor<'a> {
     fn visit_expr(&mut self, expr: &Expr) {
         if let Expr::Call(call) = expr {
             if let Expr::Attribute(attr) = call.func.as_ref() {
@@ -1099,12 +1100,12 @@ impl<'a> Visitor<'_> for SelectRelatedNoArgsVisitor<'a> {
                             "select_related() without arguments follows ALL FK chains. Specify fields explicitly.",
                             self.filename,
                         )
-                        .with_range(call.range()),
+                        .with_range(text_range(call.range())),
                     );
                 }
             }
         }
-        visitor::walk_expr(self, expr);
+        walk_expr(self, expr);
     }
 }
 
@@ -1146,14 +1147,14 @@ fn target_name_is_money(name: &str) -> bool {
     MONEY_KEYWORDS.iter().any(|kw| lower.contains(kw))
 }
 
-impl<'a> Visitor<'_> for FloatFieldForMoneyVisitor<'a> {
+impl<'a> Visitor for FloatFieldForMoneyVisitor<'a> {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         if let Stmt::ClassDef(cls) = stmt {
             let was = self.in_model;
             if is_django_model(cls) {
                 self.in_model = true;
             }
-            visitor::walk_stmt(self, stmt);
+            walk_stmt(self, stmt);
             self.in_model = was;
             return;
         }
@@ -1170,13 +1171,13 @@ impl<'a> Visitor<'_> for FloatFieldForMoneyVisitor<'a> {
                 });
                 let prev = self.current_assign_target.clone();
                 self.current_assign_target = target_name;
-                visitor::walk_stmt(self, stmt);
+                walk_stmt(self, stmt);
                 self.current_assign_target = prev;
                 return;
             }
         }
 
-        visitor::walk_stmt(self, stmt);
+        walk_stmt(self, stmt);
     }
 
     fn visit_expr(&mut self, expr: &Expr) {
@@ -1199,13 +1200,13 @@ impl<'a> Visitor<'_> for FloatFieldForMoneyVisitor<'a> {
                                 "FloatField causes rounding errors. Use DecimalField for currency/money.",
                                 self.filename,
                             )
-                            .with_range(call.range()),
+                            .with_range(text_range(call.range())),
                         );
                     }
                 }
             }
         }
-        visitor::walk_expr(self, expr);
+        walk_expr(self, expr);
     }
 }
 
@@ -1237,7 +1238,7 @@ struct MutableDefaultJsonVisitor<'a> {
     filename: &'a str,
 }
 
-impl<'a> Visitor<'_> for MutableDefaultJsonVisitor<'a> {
+impl<'a> Visitor for MutableDefaultJsonVisitor<'a> {
     fn visit_expr(&mut self, expr: &Expr) {
         if let Expr::Call(call) = expr {
             let fn_name = match call.func.as_ref() {
@@ -1257,7 +1258,7 @@ impl<'a> Visitor<'_> for MutableDefaultJsonVisitor<'a> {
                                         "Mutable default on JSONField/ArrayField is shared across instances. Use default=dict or default=list.",
                                         self.filename,
                                     )
-                                    .with_range(call.range()),
+                                    .with_range(text_range(call.range())),
                                 );
                             }
                         }
@@ -1265,7 +1266,7 @@ impl<'a> Visitor<'_> for MutableDefaultJsonVisitor<'a> {
                 }
             }
         }
-        visitor::walk_expr(self, expr);
+        walk_expr(self, expr);
     }
 }
 
@@ -1293,12 +1294,12 @@ struct SignalDispatchUidVisitor<'a> {
     filename: &'a str,
 }
 
-impl<'a> Visitor<'_> for SignalDispatchUidVisitor<'a> {
+impl<'a> Visitor for SignalDispatchUidVisitor<'a> {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         // @receiver(...) decorator on a function — check for dispatch_uid
         if let Stmt::FunctionDef(func) = stmt {
             for dec in &func.decorator_list {
-                if let Expr::Call(call) = &dec.expression {
+                if let Expr::Call(call) = dec {
                     let is_receiver = match call.func.as_ref() {
                         Expr::Name(n) => n.id.as_str() == "receiver",
                         Expr::Attribute(a) => a.attr.as_str() == "receiver",
@@ -1317,7 +1318,7 @@ impl<'a> Visitor<'_> for SignalDispatchUidVisitor<'a> {
                                     "Signal receiver without dispatch_uid may fire multiple times if module is re-imported.",
                                     self.filename,
                                 )
-                                .with_range(func.range()),
+                                .with_range(text_range(func.range())),
                             );
                         }
                     }
@@ -1342,7 +1343,7 @@ impl<'a> Visitor<'_> for SignalDispatchUidVisitor<'a> {
                                     "Signal receiver without dispatch_uid may fire multiple times if module is re-imported.",
                                     self.filename,
                                 )
-                                .with_range(call.range()),
+                                .with_range(text_range(call.range())),
                             );
                         }
                     }
@@ -1350,7 +1351,7 @@ impl<'a> Visitor<'_> for SignalDispatchUidVisitor<'a> {
             }
         }
 
-        visitor::walk_stmt(self, stmt);
+        walk_stmt(self, stmt);
     }
 }
 
@@ -1417,7 +1418,7 @@ struct MetaAttrVisitor<'a> {
     in_meta: bool,
 }
 
-impl<'a> Visitor<'_> for MetaAttrVisitor<'a> {
+impl<'a> Visitor for MetaAttrVisitor<'a> {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         if let Stmt::ClassDef(cls) = stmt {
             let prev_model = self.in_model;
@@ -1428,7 +1429,7 @@ impl<'a> Visitor<'_> for MetaAttrVisitor<'a> {
                 self.in_model = true;
                 self.in_meta = false;
                 self.model_name = cls.name.as_str().to_string();
-                visitor::walk_stmt(self, stmt);
+                walk_stmt(self, stmt);
                 self.in_model = prev_model;
                 self.in_meta = prev_meta;
                 self.model_name = prev_name;
@@ -1437,12 +1438,12 @@ impl<'a> Visitor<'_> for MetaAttrVisitor<'a> {
 
             if self.in_model && cls.name.as_str() == "Meta" {
                 self.in_meta = true;
-                visitor::walk_stmt(self, stmt);
+                walk_stmt(self, stmt);
                 self.in_meta = prev_meta;
                 return;
             }
 
-            visitor::walk_stmt(self, stmt);
+            walk_stmt(self, stmt);
         } else if let Stmt::Assign(assign) = stmt {
             if self.in_meta {
                 for target in &assign.targets {
@@ -1450,14 +1451,14 @@ impl<'a> Visitor<'_> for MetaAttrVisitor<'a> {
                         if n.id.as_str() == self.attr_name {
                             self.diags.push(
                                 Diagnostic::new(self.code, self.message, self.filename)
-                                    .with_range(assign.range()),
+                                    .with_range(text_range(assign.range())),
                             );
                         }
                     }
                 }
             }
         } else {
-            visitor::walk_stmt(self, stmt);
+            walk_stmt(self, stmt);
         }
     }
 }
@@ -1493,7 +1494,7 @@ struct SaveCreateInLoopVisitor<'a> {
     filename: &'a str,
 }
 
-impl<'a> Visitor<'_> for SaveCreateInLoopVisitor<'a> {
+impl<'a> Visitor for SaveCreateInLoopVisitor<'a> {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         if let Stmt::For(for_stmt) = stmt {
             let mut finder = LoopDbCallFinder {
@@ -1520,7 +1521,7 @@ impl<'a> Visitor<'_> for SaveCreateInLoopVisitor<'a> {
             }
             self.diags.extend(finder.diags);
         }
-        visitor::walk_stmt(self, stmt);
+        walk_stmt(self, stmt);
     }
 }
 
@@ -1541,28 +1542,27 @@ fn block_has_early_exit(body: &[Stmt]) -> bool {
         .any(|s| matches!(s, Stmt::Return(_) | Stmt::Break(_)))
 }
 
-impl<'a> Visitor<'_> for LoopDbCallFinder<'a> {
+impl<'a> Visitor for LoopDbCallFinder<'a> {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         // Track try/except blocks — saves inside try are error-handling patterns.
         if let Stmt::Try(try_stmt) = stmt {
             let prev = self.in_try;
             self.in_try = true;
             for s in &try_stmt.body {
-                visitor::walk_stmt(self, s);
+                walk_stmt(self, s);
             }
             self.in_try = prev;
             // still walk handlers/else/finally
             for handler in &try_stmt.handlers {
-                let ExceptHandler::ExceptHandler(h) = handler;
-                for s in &h.body {
-                    visitor::walk_stmt(self, s);
+                for s in &handler.body {
+                    walk_stmt(self, s);
                 }
             }
             for s in &try_stmt.orelse {
-                visitor::walk_stmt(self, s);
+                walk_stmt(self, s);
             }
             for s in &try_stmt.finalbody {
-                visitor::walk_stmt(self, s);
+                walk_stmt(self, s);
             }
             return;
         }
@@ -1579,25 +1579,25 @@ impl<'a> Visitor<'_> for LoopDbCallFinder<'a> {
             let prev = self.in_early_exit_if;
             self.in_early_exit_if = block_has_early_exit(&if_stmt.body);
             for s in &if_stmt.body {
-                visitor::walk_stmt(self, s);
+                walk_stmt(self, s);
             }
             // Walk each elif/else clause with its own early-exit status.
             for clause in &if_stmt.elif_else_clauses {
                 self.in_early_exit_if = block_has_early_exit(&clause.body);
                 for s in &clause.body {
-                    visitor::walk_stmt(self, s);
+                    walk_stmt(self, s);
                 }
             }
             self.in_early_exit_if = prev;
             return;
         }
 
-        visitor::walk_stmt(self, stmt);
+        walk_stmt(self, stmt);
     }
 
     fn visit_expr(&mut self, expr: &Expr) {
         if self.in_try || self.in_early_exit_if {
-            visitor::walk_expr(self, expr);
+            walk_expr(self, expr);
             return;
         }
 
@@ -1611,7 +1611,7 @@ impl<'a> Visitor<'_> for LoopDbCallFinder<'a> {
                             ".save()/.create() in a loop executes N queries. Use bulk_create()/bulk_update() instead.",
                             self.filename,
                         )
-                        .with_range(call.range()),
+                        .with_range(text_range(call.range())),
                     );
                 }
                 if method == "create" {
@@ -1624,14 +1624,14 @@ impl<'a> Visitor<'_> for LoopDbCallFinder<'a> {
                                     ".save()/.create() in a loop executes N queries. Use bulk_create()/bulk_update() instead.",
                                     self.filename,
                                 )
-                                .with_range(call.range()),
+                                .with_range(text_range(call.range())),
                             );
                         }
                     }
                 }
             }
         }
-        visitor::walk_expr(self, expr);
+        walk_expr(self, expr);
     }
 }
 
@@ -1675,7 +1675,7 @@ fn is_transaction_atomic(expr: &Expr) -> bool {
     }
 }
 
-impl<'a> Visitor<'_> for CeleryDelayInAtomicVisitor<'a> {
+impl<'a> Visitor for CeleryDelayInAtomicVisitor<'a> {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         if let Stmt::With(with_stmt) = stmt {
             for item in &with_stmt.items {
@@ -1683,14 +1683,14 @@ impl<'a> Visitor<'_> for CeleryDelayInAtomicVisitor<'a> {
                     let prev = self.in_atomic;
                     self.in_atomic = true;
                     for s in &with_stmt.body {
-                        visitor::walk_stmt(self, s);
+                        walk_stmt(self, s);
                     }
                     self.in_atomic = prev;
                     return;
                 }
             }
         }
-        visitor::walk_stmt(self, stmt);
+        walk_stmt(self, stmt);
     }
 
     fn visit_expr(&mut self, expr: &Expr) {
@@ -1705,13 +1705,13 @@ impl<'a> Visitor<'_> for CeleryDelayInAtomicVisitor<'a> {
                                 "Celery task dispatched inside transaction.atomic() may execute before commit. Use transaction.on_commit().",
                                 self.filename,
                             )
-                            .with_range(call.range()),
+                            .with_range(text_range(call.range())),
                         );
                     }
                 }
             }
         }
-        visitor::walk_expr(self, expr);
+        walk_expr(self, expr);
     }
 }
 
@@ -1754,7 +1754,7 @@ fn is_reverse_call(expr: &Expr) -> bool {
     false
 }
 
-impl<'a> Visitor<'_> for RedirectReverseVisitor<'a> {
+impl<'a> Visitor for RedirectReverseVisitor<'a> {
     fn visit_expr(&mut self, expr: &Expr) {
         if let Expr::Call(call) = expr {
             let is_redirect = match call.func.as_ref() {
@@ -1771,13 +1771,13 @@ impl<'a> Visitor<'_> for RedirectReverseVisitor<'a> {
                                 "redirect(reverse('name')) is redundant. Use redirect('name') directly.",
                                 self.filename,
                             )
-                            .with_range(call.range()),
+                            .with_range(text_range(call.range())),
                         );
                     }
                 }
             }
         }
-        visitor::walk_expr(self, expr);
+        walk_expr(self, expr);
     }
 }
 
@@ -1841,7 +1841,7 @@ fn is_unfiltered_delete_chain(call: &ExprCall) -> bool {
     false
 }
 
-impl<'a> Visitor<'_> for UnfilteredDeleteVisitor<'a> {
+impl<'a> Visitor for UnfilteredDeleteVisitor<'a> {
     fn visit_expr(&mut self, expr: &Expr) {
         if let Expr::Call(call) = expr {
             if is_unfiltered_delete_chain(call) {
@@ -1851,11 +1851,11 @@ impl<'a> Visitor<'_> for UnfilteredDeleteVisitor<'a> {
                         "Unfiltered .delete() removes ALL rows. Add .filter() if this is intentional.",
                         self.filename,
                     )
-                    .with_range(call.range()),
+                    .with_range(text_range(call.range())),
                 );
             }
         }
-        visitor::walk_expr(self, expr);
+        walk_expr(self, expr);
     }
 }
 
@@ -1889,17 +1889,17 @@ struct DRFPermissionVisitor<'a> {
     in_drf_view: bool,
 }
 
-impl<'a> Visitor<'_> for DRFPermissionVisitor<'a> {
+impl<'a> Visitor for DRFPermissionVisitor<'a> {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         if let Stmt::ClassDef(cls) = stmt {
             let prev = self.in_drf_view;
             if is_drf_view(cls) {
                 self.in_drf_view = true;
-                visitor::walk_stmt(self, stmt);
+                walk_stmt(self, stmt);
                 self.in_drf_view = prev;
                 return;
             }
-            visitor::walk_stmt(self, stmt);
+            walk_stmt(self, stmt);
             return;
         }
 
@@ -1934,7 +1934,7 @@ impl<'a> Visitor<'_> for DRFPermissionVisitor<'a> {
                                         "View has AllowAny/empty permissions — any user can access this endpoint.",
                                         self.filename,
                                     )
-                                    .with_range(assign.range()),
+                                    .with_range(text_range(assign.range())),
                                 );
                             }
                         }
@@ -1943,7 +1943,7 @@ impl<'a> Visitor<'_> for DRFPermissionVisitor<'a> {
             }
         }
 
-        visitor::walk_stmt(self, stmt);
+        walk_stmt(self, stmt);
     }
 }
 
@@ -1977,17 +1977,17 @@ struct DRFEmptyAuthVisitor<'a> {
     in_drf_view: bool,
 }
 
-impl<'a> Visitor<'_> for DRFEmptyAuthVisitor<'a> {
+impl<'a> Visitor for DRFEmptyAuthVisitor<'a> {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         if let Stmt::ClassDef(cls) = stmt {
             let prev = self.in_drf_view;
             if is_drf_view(cls) {
                 self.in_drf_view = true;
-                visitor::walk_stmt(self, stmt);
+                walk_stmt(self, stmt);
                 self.in_drf_view = prev;
                 return;
             }
-            visitor::walk_stmt(self, stmt);
+            walk_stmt(self, stmt);
             return;
         }
 
@@ -2008,7 +2008,7 @@ impl<'a> Visitor<'_> for DRFEmptyAuthVisitor<'a> {
                                         "Empty authentication_classes disables authentication for this view.",
                                         self.filename,
                                     )
-                                    .with_range(assign.range()),
+                                    .with_range(text_range(assign.range())),
                                 );
                             }
                         }
@@ -2017,7 +2017,7 @@ impl<'a> Visitor<'_> for DRFEmptyAuthVisitor<'a> {
             }
         }
 
-        visitor::walk_stmt(self, stmt);
+        walk_stmt(self, stmt);
     }
 }
 
@@ -2084,7 +2084,7 @@ impl AstCheck for DjangoValidationErrorInDRF {
                 "Using Django's ValidationError in DRF code causes 500 errors. Use rest_framework.exceptions.ValidationError.",
                 ctx.filename,
             )
-            .with_range(range)];
+            .with_range(text_range(range))];
         }
 
         vec![]
@@ -2233,7 +2233,7 @@ impl AstCheck for DRFNoPaginationClass {
                                     .to_string(),
                                 ctx.filename,
                             )
-                            .with_range(cls.range()),
+                            .with_range(text_range(cls.range())),
                         );
                         let _ = name;
                     }
@@ -2289,14 +2289,14 @@ struct ModelUnicodeNotCallableVisitor<'a> {
     in_model: bool,
 }
 
-impl<'a> Visitor<'_> for ModelUnicodeNotCallableVisitor<'a> {
+impl<'a> Visitor for ModelUnicodeNotCallableVisitor<'a> {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         if let Stmt::ClassDef(cls) = stmt {
             let prev = self.in_model;
             if is_django_model(cls) {
                 self.in_model = true;
             }
-            visitor::walk_stmt(self, stmt);
+            walk_stmt(self, stmt);
             self.in_model = prev;
             return;
         }
@@ -2326,7 +2326,7 @@ impl<'a> Visitor<'_> for ModelUnicodeNotCallableVisitor<'a> {
                                         "__unicode__ on model must be callable.",
                                         self.filename,
                                     )
-                                    .with_range(assign.range()),
+                                    .with_range(text_range(assign.range())),
                                 );
                             }
                         }
@@ -2335,7 +2335,7 @@ impl<'a> Visitor<'_> for ModelUnicodeNotCallableVisitor<'a> {
             }
         }
 
-        visitor::walk_stmt(self, stmt);
+        walk_stmt(self, stmt);
     }
 }
 
@@ -2367,7 +2367,7 @@ struct ModelHasUnicodeVisitor<'a> {
     model_name: String,
 }
 
-impl<'a> Visitor<'_> for ModelHasUnicodeVisitor<'a> {
+impl<'a> Visitor for ModelHasUnicodeVisitor<'a> {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         if let Stmt::ClassDef(cls) = stmt {
             let prev = self.in_model;
@@ -2376,7 +2376,7 @@ impl<'a> Visitor<'_> for ModelHasUnicodeVisitor<'a> {
                 self.in_model = true;
                 self.model_name = cls.name.as_str().to_string();
             }
-            visitor::walk_stmt(self, stmt);
+            walk_stmt(self, stmt);
             self.in_model = prev;
             self.model_name = prev_name;
             return;
@@ -2392,13 +2392,13 @@ impl<'a> Visitor<'_> for ModelHasUnicodeVisitor<'a> {
                             format!("Model '{name}' defines __unicode__ — Python 3 uses __str__ instead."),
                             self.filename,
                         )
-                        .with_range(func.range()),
+                        .with_range(text_range(func.range())),
                     );
                 }
             }
         }
 
-        visitor::walk_stmt(self, stmt);
+        walk_stmt(self, stmt);
     }
 }
 
@@ -2430,7 +2430,7 @@ struct HardCodedAuthUserVisitor<'a> {
     filename: &'a str,
 }
 
-impl<'a> Visitor<'_> for HardCodedAuthUserVisitor<'a> {
+impl<'a> Visitor for HardCodedAuthUserVisitor<'a> {
     fn visit_expr(&mut self, expr: &Expr) {
         // Skip the default (3rd) argument of any `getattr()` call — a fallback
         // value is not a hard-coded reference being actively used.
@@ -2444,24 +2444,24 @@ impl<'a> Visitor<'_> for HardCodedAuthUserVisitor<'a> {
         }
 
         if let Expr::StringLiteral(s) = expr {
-            if s.value.to_str() == "auth.User" {
+            if s.value.as_str() == "auth.User" {
                 self.diags.push(
                     Diagnostic::new(
                         "E5141",
                         "Hard-coded reference to 'auth.User' — use settings.AUTH_USER_MODEL instead.",
                         self.filename,
                     )
-                    .with_range(s.range()),
+                    .with_range(text_range(s.range())),
                 );
             }
         }
-        visitor::walk_expr(self, expr);
+        walk_expr(self, expr);
     }
 }
 
 impl<'a> HardCodedAuthUserVisitor<'a> {
     /// Returns `true` when `call` is `getattr(obj, attr, default)` (3+ args).
-    fn is_getattr_with_default(call: &ruff_python_ast::ExprCall) -> bool {
+    fn is_getattr_with_default(call: &ExprCall) -> bool {
         call.arguments.args.len() >= 3
             && matches!(call.func.as_ref(), Expr::Name(n) if n.id.as_str() == "getattr")
     }
@@ -2494,7 +2494,7 @@ impl AstCheck for ImportedAuthUser {
                                 "Importing User from django.contrib.auth.models is discouraged — use get_user_model() instead.",
                                 ctx.filename,
                             )
-                            .with_range(imp.range()),
+                            .with_range(text_range(imp.range())),
                         );
                     }
                 }
@@ -2528,7 +2528,7 @@ struct HttpResponseJsonDumpsVisitor<'a> {
     filename: &'a str,
 }
 
-impl<'a> Visitor<'_> for HttpResponseJsonDumpsVisitor<'a> {
+impl<'a> Visitor for HttpResponseJsonDumpsVisitor<'a> {
     fn visit_expr(&mut self, expr: &Expr) {
         if let Expr::Call(call) = expr {
             if is_http_response(call.func.as_ref()) {
@@ -2540,13 +2540,13 @@ impl<'a> Visitor<'_> for HttpResponseJsonDumpsVisitor<'a> {
                                 "Use JsonResponse(data) instead of HttpResponse(json.dumps(data)).",
                                 self.filename,
                             )
-                            .with_range(call.range()),
+                            .with_range(text_range(call.range())),
                         );
                     }
                 }
             }
         }
-        visitor::walk_expr(self, expr);
+        walk_expr(self, expr);
     }
 }
 
@@ -2574,7 +2574,7 @@ struct HttpResponseContentTypeJsonVisitor<'a> {
     filename: &'a str,
 }
 
-impl<'a> Visitor<'_> for HttpResponseContentTypeJsonVisitor<'a> {
+impl<'a> Visitor for HttpResponseContentTypeJsonVisitor<'a> {
     fn visit_expr(&mut self, expr: &Expr) {
         if let Expr::Call(call) = expr {
             if is_http_response(call.func.as_ref()) {
@@ -2591,12 +2591,12 @@ impl<'a> Visitor<'_> for HttpResponseContentTypeJsonVisitor<'a> {
                             "Use JsonResponse() instead of HttpResponse(content_type='application/json').",
                             self.filename,
                         )
-                        .with_range(call.range()),
+                        .with_range(text_range(call.range())),
                     );
                 }
             }
         }
-        visitor::walk_expr(self, expr);
+        walk_expr(self, expr);
     }
 }
 
@@ -2624,7 +2624,7 @@ struct RedundantContentTypeJsonVisitor<'a> {
     filename: &'a str,
 }
 
-impl<'a> Visitor<'_> for RedundantContentTypeJsonVisitor<'a> {
+impl<'a> Visitor for RedundantContentTypeJsonVisitor<'a> {
     fn visit_expr(&mut self, expr: &Expr) {
         if let Expr::Call(call) = expr {
             if is_json_response(call.func.as_ref()) {
@@ -2640,12 +2640,12 @@ impl<'a> Visitor<'_> for RedundantContentTypeJsonVisitor<'a> {
                             "Redundant content_type parameter for JsonResponse().",
                             self.filename,
                         )
-                        .with_range(call.range()),
+                        .with_range(text_range(call.range())),
                     );
                 }
             }
         }
-        visitor::walk_expr(self, expr);
+        walk_expr(self, expr);
     }
 }
 
@@ -2677,7 +2677,7 @@ struct RunPythonVisitor<'a> {
     filename: &'a str,
 }
 
-impl<'a> Visitor<'_> for RunPythonVisitor<'a> {
+impl<'a> Visitor for RunPythonVisitor<'a> {
     fn visit_expr(&mut self, expr: &Expr) {
         if let Expr::Call(call) = expr {
             let is_run_python = match call.func.as_ref() {
@@ -2699,12 +2699,12 @@ impl<'a> Visitor<'_> for RunPythonVisitor<'a> {
                             "RunPython migration operation is missing a reverse_code argument.",
                             self.filename,
                         )
-                        .with_range(call.range()),
+                        .with_range(text_range(call.range())),
                     );
                 }
             }
         }
-        visitor::walk_expr(self, expr);
+        walk_expr(self, expr);
     }
 }
 
@@ -2735,7 +2735,7 @@ struct AddFieldDefaultVisitor<'a> {
     filename: &'a str,
 }
 
-impl<'a> Visitor<'_> for AddFieldDefaultVisitor<'a> {
+impl<'a> Visitor for AddFieldDefaultVisitor<'a> {
     fn visit_expr(&mut self, expr: &Expr) {
         if let Expr::Call(call) = expr {
             let is_add_field = match call.func.as_ref() {
@@ -2759,7 +2759,7 @@ impl<'a> Visitor<'_> for AddFieldDefaultVisitor<'a> {
                                         "AddField migration sets a default value on the field — causes full-table rewrite on large tables.",
                                         self.filename,
                                     )
-                                    .with_range(call.range()),
+                                    .with_range(text_range(call.range())),
                                 );
                             }
                         }
@@ -2767,7 +2767,7 @@ impl<'a> Visitor<'_> for AddFieldDefaultVisitor<'a> {
                 }
             }
         }
-        visitor::walk_expr(self, expr);
+        walk_expr(self, expr);
     }
 }
 
@@ -2802,7 +2802,7 @@ struct TooManyArgumentsVisitor<'a> {
     max_args: u32,
 }
 
-impl<'a> Visitor<'_> for TooManyArgumentsVisitor<'a> {
+impl<'a> Visitor for TooManyArgumentsVisitor<'a> {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         if let Stmt::FunctionDef(f) = stmt {
             let name = f.name.as_str();
@@ -2813,7 +2813,7 @@ impl<'a> Visitor<'_> for TooManyArgumentsVisitor<'a> {
                     .args
                     .iter()
                     .filter(|p| {
-                        let pname = p.parameter.name.as_str();
+                        let pname = p.name.as_str();
                         pname != "self" && pname != "cls"
                     })
                     .count();
@@ -2824,12 +2824,12 @@ impl<'a> Visitor<'_> for TooManyArgumentsVisitor<'a> {
                             format!("Function '{name}' has {param_count} arguments (max {}). Consider using a config object or **kwargs.", self.max_args),
                             self.filename,
                         )
-                        .with_range(f.range()),
+                        .with_range(text_range(f.range())),
                     );
                 }
             }
         }
-        visitor::walk_stmt(self, stmt);
+        walk_stmt(self, stmt);
     }
 }
 
@@ -2864,7 +2864,7 @@ struct TooManyReturnsVisitor<'a> {
     max_returns: u32,
 }
 
-impl<'a> Visitor<'_> for TooManyReturnsVisitor<'a> {
+impl<'a> Visitor for TooManyReturnsVisitor<'a> {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         if let Stmt::FunctionDef(f) = stmt {
             let name = f.name.as_str().to_string();
@@ -2876,11 +2876,11 @@ impl<'a> Visitor<'_> for TooManyReturnsVisitor<'a> {
                         format!("Function '{name}' has {count} return statements (max {}). Consider simplifying.", self.max_returns),
                         self.filename,
                     )
-                    .with_range(f.range()),
+                    .with_range(text_range(f.range())),
                 );
             }
         }
-        visitor::walk_stmt(self, stmt);
+        walk_stmt(self, stmt);
     }
 }
 
@@ -2909,10 +2909,7 @@ fn count_returns_in_stmt(stmt: &Stmt) -> usize {
             count_returns_in_body(&s.body)
                 + s.handlers
                     .iter()
-                    .map(|h| {
-                        let ExceptHandler::ExceptHandler(eh) = h;
-                        count_returns_in_body(&eh.body)
-                    })
+                    .map(|h| count_returns_in_body(&h.body))
                     .sum::<usize>()
                 + count_returns_in_body(&s.orelse)
                 + count_returns_in_body(&s.finalbody)
@@ -2958,7 +2955,7 @@ struct TooManyBranchesVisitor<'a> {
     max_branches: u32,
 }
 
-impl<'a> Visitor<'_> for TooManyBranchesVisitor<'a> {
+impl<'a> Visitor for TooManyBranchesVisitor<'a> {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         if let Stmt::FunctionDef(f) = stmt {
             let name = f.name.as_str().to_string();
@@ -2970,11 +2967,11 @@ impl<'a> Visitor<'_> for TooManyBranchesVisitor<'a> {
                         format!("Function '{name}' has {count} branches (max {}). Consider breaking into smaller functions.", self.max_branches),
                         self.filename,
                     )
-                    .with_range(f.range()),
+                    .with_range(text_range(f.range())),
                 );
             }
         }
-        visitor::walk_stmt(self, stmt);
+        walk_stmt(self, stmt);
     }
 }
 
@@ -3002,10 +2999,7 @@ fn count_branches_in_stmt(stmt: &Stmt) -> usize {
                 + count_branches_in_body(&s.body)
                 + s.handlers
                     .iter()
-                    .map(|h| {
-                        let ExceptHandler::ExceptHandler(eh) = h;
-                        count_branches_in_body(&eh.body)
-                    })
+                    .map(|h| count_branches_in_body(&h.body))
                     .sum::<usize>()
                 + count_branches_in_body(&s.orelse)
                 + count_branches_in_body(&s.finalbody)
@@ -3052,7 +3046,7 @@ struct TooManyLocalsVisitor<'a> {
     max_locals: u32,
 }
 
-impl<'a> Visitor<'_> for TooManyLocalsVisitor<'a> {
+impl<'a> Visitor for TooManyLocalsVisitor<'a> {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         if let Stmt::FunctionDef(f) = stmt {
             let name = f.name.as_str().to_string();
@@ -3066,11 +3060,11 @@ impl<'a> Visitor<'_> for TooManyLocalsVisitor<'a> {
                         format!("Function '{name}' has {count} local variables (max {}). Consider extracting helper functions.", self.max_locals),
                         self.filename,
                     )
-                    .with_range(f.range()),
+                    .with_range(text_range(f.range())),
                 );
             }
         }
-        visitor::walk_stmt(self, stmt);
+        walk_stmt(self, stmt);
     }
 }
 
@@ -3119,11 +3113,10 @@ fn collect_local_vars_from_stmt(stmt: &Stmt, locals: &mut std::collections::Hash
         Stmt::Try(s) => {
             collect_local_vars_from_body(&s.body, locals);
             for handler in &s.handlers {
-                let ExceptHandler::ExceptHandler(eh) = handler;
-                if let Some(name) = &eh.name {
+                if let Some(name) = &handler.name {
                     locals.insert(name.as_str().to_string());
                 }
-                collect_local_vars_from_body(&eh.body, locals);
+                collect_local_vars_from_body(&handler.body, locals);
             }
             collect_local_vars_from_body(&s.orelse, locals);
             collect_local_vars_from_body(&s.finalbody, locals);
@@ -3195,7 +3188,7 @@ struct TooManyStatementsVisitor<'a> {
     max_statements: u32,
 }
 
-impl<'a> Visitor<'_> for TooManyStatementsVisitor<'a> {
+impl<'a> Visitor for TooManyStatementsVisitor<'a> {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         if let Stmt::FunctionDef(f) = stmt {
             let name = f.name.as_str().to_string();
@@ -3207,11 +3200,11 @@ impl<'a> Visitor<'_> for TooManyStatementsVisitor<'a> {
                         format!("Function '{name}' has {count} statements (max {}). Consider breaking into smaller functions.", self.max_statements),
                         self.filename,
                     )
-                    .with_range(f.range()),
+                    .with_range(text_range(f.range())),
                 );
             }
         }
-        visitor::walk_stmt(self, stmt);
+        walk_stmt(self, stmt);
     }
 }
 
@@ -3237,10 +3230,7 @@ fn count_statements_in_stmt(stmt: &Stmt) -> usize {
             1 + count_statements_in_body(&s.body)
                 + s.handlers
                     .iter()
-                    .map(|h| {
-                        let ExceptHandler::ExceptHandler(eh) = h;
-                        count_statements_in_body(&eh.body)
-                    })
+                    .map(|h| count_statements_in_body(&h.body))
                     .sum::<usize>()
                 + count_statements_in_body(&s.orelse)
                 + count_statements_in_body(&s.finalbody)
@@ -3283,7 +3273,7 @@ impl AstCheck for ModelTooManyFields {
                                 format!("Model '{name}' has {field_count} fields (max {}). Consider splitting into related models.", self.max_fields),
                                 ctx.filename,
                             )
-                            .with_range(cls.range()),
+                            .with_range(text_range(cls.range())),
                         );
                     }
                 }
@@ -3377,7 +3367,7 @@ impl AstCheck for TooManyMethods {
                                 format!("Class '{name}' has {method_count} methods (max {}). Consider using mixins or splitting.", self.max_methods),
                                 ctx.filename,
                             )
-                            .with_range(cls.range()),
+                            .with_range(text_range(cls.range())),
                         );
                     }
                 }
@@ -3425,7 +3415,7 @@ struct DeeplyNestedVisitor<'a> {
 }
 
 impl<'a> DeeplyNestedVisitor<'a> {
-    fn check_body(&mut self, body: &[Stmt], range: ruff_text_size::TextRange) {
+    fn check_body(&mut self, body: &[Stmt], range: thorn_api::ByteRange) {
         self.depth += 1;
         if self.depth > self.max_depth as usize {
             self.diags.push(
@@ -3434,7 +3424,7 @@ impl<'a> DeeplyNestedVisitor<'a> {
                     format!("Code is nested {} levels deep (max {}). Consider early returns or extracting functions.", self.depth, self.max_depth),
                     self.filename,
                 )
-                .with_range(range),
+                .with_range(text_range(range)),
             );
         }
         for stmt in body {
@@ -3469,8 +3459,7 @@ impl<'a> DeeplyNestedVisitor<'a> {
             Stmt::Try(s) => {
                 self.check_body(&s.body, s.range());
                 for handler in &s.handlers {
-                    let ExceptHandler::ExceptHandler(eh) = handler;
-                    self.check_body(&eh.body, eh.range());
+                    self.check_body(&handler.body, handler.range());
                 }
                 if !s.orelse.is_empty() {
                     self.check_body(&s.orelse, s.range());
@@ -3486,7 +3475,7 @@ impl<'a> DeeplyNestedVisitor<'a> {
     }
 }
 
-impl<'a> Visitor<'_> for DeeplyNestedVisitor<'a> {
+impl<'a> Visitor for DeeplyNestedVisitor<'a> {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         if let Stmt::FunctionDef(f) = stmt {
             // Each function body starts at depth 0
@@ -3497,7 +3486,7 @@ impl<'a> Visitor<'_> for DeeplyNestedVisitor<'a> {
             }
             self.depth = saved_depth;
         }
-        visitor::walk_stmt(self, stmt);
+        walk_stmt(self, stmt);
     }
 }
 
@@ -3562,10 +3551,7 @@ fn stmt_calls_super_init(stmt: &Stmt) -> bool {
         }
         Stmt::Try(s) => {
             body_calls_super_init(&s.body)
-                || s.handlers.iter().any(|h| {
-                    let ExceptHandler::ExceptHandler(eh) = h;
-                    body_calls_super_init(&eh.body)
-                })
+                || s.handlers.iter().any(|h| body_calls_super_init(&h.body))
         }
         _ => false,
     }
@@ -3609,7 +3595,7 @@ fn check_super_init_in_class(cls: &StmtClassDef, filename: &str, diags: &mut Vec
                             format!("'__init__' in class '{class_name}' does not call super().__init__(). This can cause MRO issues with Django classes."),
                             filename,
                         )
-                        .with_range(func.range()),
+                        .with_range(text_range(func.range())),
                     );
             }
         }
@@ -3709,21 +3695,20 @@ fn is_broader_exception(parent_name: &str, child_name: &str) -> bool {
 }
 
 fn except_handler_type_name(handler: &ExceptHandler) -> Option<&str> {
-    let ExceptHandler::ExceptHandler(eh) = handler;
-    match eh.type_.as_deref()? {
+    match handler.type_.as_deref()? {
         Expr::Name(n) => Some(n.id.as_str()),
         Expr::Attribute(a) => Some(a.attr.as_str()),
         _ => None,
     }
 }
 
-impl<'a> Visitor<'_> for BadExceptOrderVisitor<'a> {
+impl<'a> Visitor for BadExceptOrderVisitor<'a> {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         if let Stmt::Try(try_stmt) = stmt {
             let handlers = &try_stmt.handlers;
             for i in 0..handlers.len() {
                 let Some(earlier_name) = except_handler_type_name(&handlers[i]) else {
-                    visitor::walk_stmt(self, stmt);
+                    walk_stmt(self, stmt);
                     return;
                 };
                 for later_handler in handlers.iter().skip(i + 1) {
@@ -3731,7 +3716,6 @@ impl<'a> Visitor<'_> for BadExceptOrderVisitor<'a> {
                         continue;
                     };
                     if is_broader_exception(earlier_name, later_name) {
-                        let ExceptHandler::ExceptHandler(eh) = later_handler;
                         self.diags.push(
                             Diagnostic::new(
                                 "DJ045",
@@ -3740,13 +3724,13 @@ impl<'a> Visitor<'_> for BadExceptOrderVisitor<'a> {
                                 ),
                                 self.filename,
                             )
-                            .with_range(eh.range()),
+                            .with_range(text_range(later_handler.range())),
                         );
                     }
                 }
             }
         }
-        visitor::walk_stmt(self, stmt);
+        walk_stmt(self, stmt);
     }
 }
 
@@ -3793,7 +3777,7 @@ fn constant_test_description(expr: &Expr) -> Option<String> {
             Some(format!("{:?}", n.value))
         }
         Expr::StringLiteral(s) => {
-            let val = s.value.to_str();
+            let val = s.value.as_str();
             if val.is_empty() {
                 None
             } else {
@@ -3825,7 +3809,7 @@ fn is_dunder_name_check(expr: &Expr) -> bool {
     false
 }
 
-impl<'a> Visitor<'_> for UsingConstantTestVisitor<'a> {
+impl<'a> Visitor for UsingConstantTestVisitor<'a> {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::If(if_stmt) => {
@@ -3841,7 +3825,7 @@ impl<'a> Visitor<'_> for UsingConstantTestVisitor<'a> {
                                 ),
                                 self.filename,
                             )
-                            .with_range(if_stmt.range()),
+                            .with_range(text_range(if_stmt.range())),
                         );
                     }
                 }
@@ -3851,7 +3835,7 @@ impl<'a> Visitor<'_> for UsingConstantTestVisitor<'a> {
                 // `while True:` is a recognised idiom — skip it
                 if let Expr::BooleanLiteral(b) = &**test {
                     if b.value {
-                        visitor::walk_stmt(self, stmt);
+                        walk_stmt(self, stmt);
                         return;
                     }
                 }
@@ -3862,13 +3846,13 @@ impl<'a> Visitor<'_> for UsingConstantTestVisitor<'a> {
                             format!("Using constant test '{desc}' in while loop — this loop is dead code."),
                             self.filename,
                         )
-                        .with_range(while_stmt.range()),
+                        .with_range(text_range(while_stmt.range())),
                     );
                 }
             }
             _ => {}
         }
-        visitor::walk_stmt(self, stmt);
+        walk_stmt(self, stmt);
     }
 }
 
@@ -3914,7 +3898,7 @@ fn expr_as_assign_key(expr: &Expr) -> Option<String> {
     }
 }
 
-impl<'a> Visitor<'_> for SelfAssigningVisitor<'a> {
+impl<'a> Visitor for SelfAssigningVisitor<'a> {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         if let Stmt::Assign(assign) = stmt {
             // Skip tuple/multi-target assignments — too complex to check simply
@@ -3928,14 +3912,14 @@ impl<'a> Visitor<'_> for SelfAssigningVisitor<'a> {
                                     format!("'{target_key} = {value_key}' is a self-assignment (likely a typo)."),
                                     self.filename,
                                 )
-                                .with_range(assign.range()),
+                                .with_range(text_range(assign.range())),
                             );
                         }
                     }
                 }
             }
         }
-        visitor::walk_stmt(self, stmt);
+        walk_stmt(self, stmt);
     }
 }
 
@@ -3980,39 +3964,8 @@ fn has_abstract_meta(class: &StmtClassDef) -> bool {
     })
 }
 
-fn is_django_model(class: &StmtClassDef) -> bool {
-    class.arguments.as_ref().is_some_and(|args| {
-        args.args.iter().any(|base| match base {
-            Expr::Attribute(a) => a.attr.as_str() == "Model",
-            Expr::Name(n) => n.id.as_str() == "Model",
-            _ => false,
-        })
-    })
-}
-
-fn is_model_form(class: &StmtClassDef) -> bool {
-    class.arguments.as_ref().is_some_and(|args| {
-        args.args.iter().any(|base| match base {
-            Expr::Name(n) => n.id.as_str() == "ModelForm",
-            Expr::Attribute(a) => a.attr.as_str() == "ModelForm",
-            _ => false,
-        })
-    })
-}
-
-fn has_null_true(arguments: &Arguments) -> bool {
-    arguments.keywords.iter().any(|kw| {
-        kw.arg.as_ref().is_some_and(|a| a.as_str() == "null")
-            && matches!(&kw.value, Expr::BooleanLiteral(b) if b.value)
-    })
-}
-
-fn has_unique_true(arguments: &Arguments) -> bool {
-    arguments.keywords.iter().any(|kw| {
-        kw.arg.as_ref().is_some_and(|a| a.as_str() == "unique")
-            && matches!(&kw.value, Expr::BooleanLiteral(b) if b.value)
-    })
-}
+// is_django_model, is_model_form, has_null_true, has_unique_true are now
+// imported from super::common (see top of file).
 
 fn is_locals_call(expr: &Expr) -> bool {
     if let Expr::Call(call) = expr {
@@ -4055,7 +4008,7 @@ fn is_json_dumps(expr: &Expr) -> bool {
 
 fn is_application_json_string(expr: &Expr) -> bool {
     if let Expr::StringLiteral(s) = expr {
-        let val = s.value.to_str();
+        let val = s.value.as_str();
         return val == "application/json" || val.starts_with("application/json");
     }
     false
@@ -4158,16 +4111,9 @@ mod tests {
     /// Parse `source` as a Python module, run `check` against it, and return
     /// the list of diagnostic codes produced.
     fn run_check(check: &dyn AstCheck, source: &str) -> Vec<String> {
-        let parsed =
-            ruff_python_parser::parse(source, ruff_python_parser::Mode::Module.into()).unwrap();
-        let module = parsed.into_syntax().module().unwrap().clone();
+        let module = thorn_core::parser::parse_python(source).unwrap();
         let graph = AppGraph::default();
-        let ctx = CheckContext {
-            module: &module,
-            source,
-            filename: "test.py",
-            graph: &graph,
-        };
+        let ctx = CheckContext::new(&module, source, "test.py", &graph);
         check.check(&ctx).into_iter().map(|d| d.code).collect()
     }
 
@@ -4175,16 +4121,9 @@ mod tests {
     /// that filename-based skip rules (migrations, seed, webhook, …) can be
     /// exercised.
     fn run_check_with_filename(check: &dyn AstCheck, source: &str, filename: &str) -> Vec<String> {
-        let parsed =
-            ruff_python_parser::parse(source, ruff_python_parser::Mode::Module.into()).unwrap();
-        let module = parsed.into_syntax().module().unwrap().clone();
+        let module = thorn_core::parser::parse_python(source).unwrap();
         let graph = AppGraph::default();
-        let ctx = CheckContext {
-            module: &module,
-            source,
-            filename,
-            graph: &graph,
-        };
+        let ctx = CheckContext::new(&module, source, filename, &graph);
         check.check(&ctx).into_iter().map(|d| d.code).collect()
     }
 
