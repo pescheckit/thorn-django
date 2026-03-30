@@ -4,7 +4,7 @@ Hash: SHA512
 Origin: PesCheckIT
 Label: thorn-django
 Codename: stable
-Date: Mon, 30 Mar 2026 12:31:30 UTC
+Date: Mon, 30 Mar 2026 14:58:30 UTC
 Architectures: amd64 arm64
 Components: main
 Description: Thorn Django Linter Package Repository
@@ -12,36 +12,36 @@ MD5Sum:
  d41d8cd98f00b204e9800998ecf8427e 0 main/binary-amd64/Packages
  7029066c27ac6f5ef18d660d5741979a 20 main/binary-amd64/Packages.gz
  65938847ad5575958dd3ab819a208141 127 main/binary-amd64/Release
- ad84a02f8b7795b6822f547125b70b7b 686 main/binary-arm64/Packages
- 35306be23ce02918ab0fa0963621eafc 480 main/binary-arm64/Packages.gz
+ 2afc7c6f96782b5b2e2c364f63e31ffb 686 main/binary-arm64/Packages
+ 76ced51d62054ee3a78589ba609ac324 478 main/binary-arm64/Packages.gz
  9b35d553570aab8c3411ad0128f3c015 127 main/binary-arm64/Release
 SHA1:
  da39a3ee5e6b4b0d3255bfef95601890afd80709 0 main/binary-amd64/Packages
  46c6643f07aa7f6bfe7118de926b86defc5087c4 20 main/binary-amd64/Packages.gz
  e77a0f3de79b5a9c33485878918a875cb52d7f71 127 main/binary-amd64/Release
- ce20431549e18de7e9182fbb96da4cbfdd9151b2 686 main/binary-arm64/Packages
- d243b7861fe15c872c76e31a8c4129e81932b987 480 main/binary-arm64/Packages.gz
+ b9af1ead62bcfa227113d1fbf4ddc48153fb228d 686 main/binary-arm64/Packages
+ 20e0b2659a0b59c091dcbb6b3c3bac5abd4d258e 478 main/binary-arm64/Packages.gz
  f03cefb887cd171d3155b030167f9e127200d3a9 127 main/binary-arm64/Release
 SHA256:
  e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 0 main/binary-amd64/Packages
  59869db34853933b239f1e2219cf7d431da006aa919635478511fabbfc8849d2 20 main/binary-amd64/Packages.gz
  0b62392e68225f029281ab2f86f8dc8f8e62b07ea562b6a99401a51db0a37b10 127 main/binary-amd64/Release
- 89363e4abdb45a6b2bdd69d0e01ccb8bbc8cf28a90f847ad58483b9e5a70b4cf 686 main/binary-arm64/Packages
- 95b10ec8af33d5b90b7849635ff9860e1c0400fb2cb06d496b8592222fbe3151 480 main/binary-arm64/Packages.gz
+ c81f7a723fba1853cb75683fbe698d16592812874805db4a69f5b28bd215d377 686 main/binary-arm64/Packages
+ eb9c3daa432b154dea1fc69b4527029cd84ed87c861c6c3fa138300678476b92 478 main/binary-arm64/Packages.gz
  df01b433c19f99fb5cb4e696856c5afafb7459e034b293e50681b02a07885ffc 127 main/binary-arm64/Release
 -----BEGIN PGP SIGNATURE-----
 
-iQIzBAEBCgAdFiEETGCh7mMuezleOhCxHUyQfzn/sSEFAmnKbSIACgkQHUyQfzn/
-sSEI1w//YV2f2yIMmdENz3/+puGDY4blGYu8mTLZvMM/cG0TWCSKPfe0Eey3WEtP
-PXFH2CHv/7IlhmYN0p+45UYnxXY6oxsEg5Th2IQeSbwjUFFHmmb/8IKT+kbOYrBJ
-v0gvT7QljqxOCgqD/BhdoOHlAvNk74/RIrBqOOPkC+JbARRF2CJgvQt7tdePrc78
-QKGDTUm+qN0IqvnbcaCFLPrFeU24pruWx9YPbqaQv0kms1PDltvjGh6Gbc6Y4mcY
-5FsE0xV+fH19HoG3OsxDKUTCBb6PSut8H0wSrNpmd6REJVc3SNUTG+SkPIYHC80n
-iSAZNWt0AhOSukF3kavwGpDGLvvFG/Oyeckj8zXXtheEmL/3t+yFtS4gAOVkkcJX
-pbQb+MBIUWljnTKrifVaMVXOnlCBaxsdaszm7JZH4GgUXMvGrA+XFgatd8b01LQ/
-dyUEYpwBh19PHwfSQcYQlFjkyx+ikOiGm/0YnJaPp2N5ndRxJUYLT187HpcSi6BC
-UGM3E990c8yt6sAfx4h7HoGKuRkFK4Lej4DrDBXck6Ygj3TOThpvQVYEDwKspMXb
-f/vZLgxC9yrOjIRWB0x7mw+L6fId3FFrh9mxWdV54eYFGWKsaXbk6FT6A5Pkhfx3
-HUHLKGMQrnLgphnMEDHYgi9xOwj/ENu9bRyRri67Wd1FacPNdCE=
-=Z+hK
+iQIzBAEBCgAdFiEETGCh7mMuezleOhCxHUyQfzn/sSEFAmnKj5YACgkQHUyQfzn/
+sSFdQQ//f1qNsLLMzOj3RPDhiyaJYLhCIDDEqjoQDgMr2CPp1+SBKn14n5Q0WwsL
+WUzffDgxVW4K4FbSyG/VjNA29nQhzj7HNpSPwBv/6iBTZdxprHVVa0mu4YHVkRl5
+inpZy8hmvBhGoSJ7yo68J1d9V+YjO/+NszZd0IyNvcEwYiBaujxMI77mqrEdiVe5
+5ZT3Q28Y/qm3UfYKPPl9MrzXH/injAVylXctVk8VoPtVyLdZQ+M4RlWvgtRnQ9IJ
+Ujhi2fw3gxwuiVhcf9/XC25qzWhL/sffJkwpU8HuJgpWNhNSjLFuUj4iEAnAalBe
+E+I4RyHH+yUqZ2T3siOMHTH72g6CJpVfxFWetxZKtpcXbHA05zTp0RQowLSGnlmv
+qna7m8smay7u+y73IXqytiDuKli2SNdtFqD3h4LML8PETcRwo7NYDxAjONcZIOcT
+t7KpYd5j+5xbud+gQZABggoN3R7Hkryi6/vIRxD5OttPXpgOtSpkUaXcXvjLQexT
+/1NQM0EYr10bN9+gPdbQqr+NxlctXTcqldx1LCjfj/XscsT+r6RR3p25lv9ZqxqQ
+OeNT3XOmh/Nr9yERG7gCTgvlnJ+mNmWWSJLoIe9ii7gnQJ7KLyrLMHQv9YOFhQWi
+dAEgqvUPcWWSECDmw2pSf4JcT3efcoU5I6ryUsj5SYWtcSX/pIk=
+=Sy0s
 -----END PGP SIGNATURE-----
