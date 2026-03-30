@@ -1,7 +1,7 @@
 Origin: PesCheckIT
 Label: thorn-django
 Codename: stable
-Date: Sat, 28 Mar 2026 14:28:51 UTC
+Date: Mon, 30 Mar 2026 12:21:08 UTC
 Architectures: amd64 arm64
 Components: main
 Description: Thorn Django Linter Package Repository
@@ -9,20 +9,20 @@ MD5Sum:
  d41d8cd98f00b204e9800998ecf8427e 0 main/binary-amd64/Packages
  7029066c27ac6f5ef18d660d5741979a 20 main/binary-amd64/Packages.gz
  65938847ad5575958dd3ab819a208141 127 main/binary-amd64/Release
- 71f3a05f7ba946be42cd7fcc0526452a 684 main/binary-arm64/Packages
- ccb536814cbea47fb30c9dc12e586c30 478 main/binary-arm64/Packages.gz
+ d2f800f8651e6009ce0b45ea49d2f866 684 main/binary-arm64/Packages
+ 8f5f7053ab8fcac6e29e37fecd01c45c 479 main/binary-arm64/Packages.gz
  9b35d553570aab8c3411ad0128f3c015 127 main/binary-arm64/Release
 SHA1:
  da39a3ee5e6b4b0d3255bfef95601890afd80709 0 main/binary-amd64/Packages
  46c6643f07aa7f6bfe7118de926b86defc5087c4 20 main/binary-amd64/Packages.gz
  e77a0f3de79b5a9c33485878918a875cb52d7f71 127 main/binary-amd64/Release
- 79a3d757b740c417ef817098dd4f22dcb7749c78 684 main/binary-arm64/Packages
- cd29cb9d591ec9183007c0c9803a4094ec05ca8f 478 main/binary-arm64/Packages.gz
+ 9395b6967066f66fb811b98dc2d74d1a1fc83d03 684 main/binary-arm64/Packages
+ 2a35eefa6a2f0297bf4d4e783fc2b00269e0b83c 479 main/binary-arm64/Packages.gz
  f03cefb887cd171d3155b030167f9e127200d3a9 127 main/binary-arm64/Release
 SHA256:
  e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 0 main/binary-amd64/Packages
  59869db34853933b239f1e2219cf7d431da006aa919635478511fabbfc8849d2 20 main/binary-amd64/Packages.gz
  0b62392e68225f029281ab2f86f8dc8f8e62b07ea562b6a99401a51db0a37b10 127 main/binary-amd64/Release
- dd527cba0048f9e48f52e05c621a8581719f81ee1d786f586a2633ed9c857121 684 main/binary-arm64/Packages
- 0eef0ea762c43754eda3ae23375a82e7c085b0d5ffa89737313539e8d0609019 478 main/binary-arm64/Packages.gz
+ d16947b91c5b1a41d09ded4f4d19abe593a670c3507c13a7a0160126c55b9c3f 684 main/binary-arm64/Packages
+ 926cb2f999b68e93d05c6392a8c67581b8cdee6eec3d1769b22e8af8dd9bb64a 479 main/binary-arm64/Packages.gz
  df01b433c19f99fb5cb4e696856c5afafb7459e034b293e50681b02a07885ffc 127 main/binary-arm64/Release
