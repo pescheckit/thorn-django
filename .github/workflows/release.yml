@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -277,9 +278,19 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      - name: Detect pre-release
+        id: prerelease
+        run: |
+          if [[ "${{ github.ref_name }}" == *-alpha* ]] || [[ "${{ github.ref_name }}" == *-beta* ]] || [[ "${{ github.ref_name }}" == *-rc* ]]; then
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          prerelease: ${{ steps.prerelease.outputs.is_prerelease == 'true' }}
           generate_release_notes: true
           body: |
             ## Install via APT (Debian / Ubuntu)
@@ -313,11 +324,8 @@ jobs:
 
             ## Docker
 
-            ```dockerfile
-            ADD https://github.com/pescheckit/thorn-django/releases/download/${{ github.ref_name }}/thorn-django-py312-linux-x86_64.tar.gz /tmp/
-            RUN tar xzf /tmp/thorn-django-py312-linux-x86_64.tar.gz -C /usr/local/bin/ \
-                && mv /usr/local/bin/thorn-django-py312-linux-x86_64 /usr/local/bin/thorn-django \
-                && rm /tmp/*.tar.gz
+            ```sh
+            docker run --rm -v "$PWD:/src" ghcr.io/pescheckit/thorn-django:${{ github.ref_name }}
             ```
 
             ## Build from source
@@ -326,3 +334,49 @@ jobs:
             cargo install --git https://github.com/pescheckit/thorn-django
             ```
           files: artifacts/*
+
+  docker:
+    name: Publish Docker Image
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: git clone --depth 1 https://github.com/pescheckit/thorn ../thorn
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Detect stable release
+        id: stable
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          if [[ "$TAG" == *-* ]]; then
+            echo "is_stable=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_stable=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ steps.stable.outputs.is_stable }}
+            type=raw,value=latest,enable=${{ steps.stable.outputs.is_stable }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ..
+          file: ./Dockerfile.release
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
